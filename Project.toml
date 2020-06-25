@@ -1,0 +1,19 @@
+name = "CompressedSensing"
+uuid = "adc28fdd-7b77-41a2-89a7-a1a193b336a0"
+authors = ["Sebastian Ament <sebastianeament@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+Clp = "e2554f3b-3117-50c0-817c-e040a3ddf72d"
+ECOS = "e2685f51-7e38-5353-a97d-a921fd2c8199"
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+KroneckerProducts = "1b19e153-50d3-4699-8064-93bcb9fb4fba"
+LazyInverse = "d0afe1cb-6484-4949-b9e9-61bc645ed6c7"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LinearAlgebraExtensions = "cb114d4a-f1bd-499c-ad9e-7f2ed74575b9"
+Metrics = "c142dcad-aa7a-4cb0-9847-771ddcebca7d"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+WoodburyIdentity = "49563772-d9e4-48b4-a8b6-4cbe661ead9f"
