@@ -1,7 +1,8 @@
 function sparse_data(;n = 32, m = 64, k = 3, min_x = 0., rescaled = true)
     A = randn(n, m)
     if rescaled
-        A .-= mean(A, dims = 1)
+        ε = 1e-6
+        A .-= ε*mean(A, dims = 1)
         A ./= sqrt.(sum(abs2, A, dims = 1))
     end
     x = spzeros(m)
@@ -11,6 +12,36 @@ function sparse_data(;n = 32, m = 64, k = 3, min_x = 0., rescaled = true)
     b = A*x
     A, x, b
 end
+
+function normalize!(A::AbstractVecOrMat)
+    A ./= sqrt.(sum(abs2, A, dims = 1))
+end
+
+# see "On the Uniqueness of Nonnegative Sparse Solutions to Underdetermined Systems of Equations", Bruckstein 2008
+function preconditioner(ε::Real)
+    function p!(y, x)
+        y .= x .- ε*mean(x, dims = 1)
+    end
+    p!(x) = p!(x, x)
+    return p!
+end
+precondition!(A::AbstractVecOrMat, ε::Real) = preconditioner(ε)(A)
+
+# related but not identical to the one used in:
+# "Preconditioned Multiple Orthogonal Least Squares and Applications in Ghost Imaging via Sparsity Constraint"
+function preconditioner(A::AbstractMatrix)
+    svdA = svd(A)
+    U, S = svdA.U, svdA.S
+    function p!(y, x)
+        z = similar(x)
+        mul!(z, U', x)
+        z ./= S
+        mul!(y, U, z)
+    end
+    p!(x) = p!(x, x)
+    return p!
+end
+precondition!(A::AbstractMatrix) = preconditioner(A)(A)
 
 # calculates mutual coherence
 function coherence(A::AbstractMatrix)
@@ -24,15 +55,21 @@ function coherence(A::AbstractMatrix)
 end
 
 # Babel function, see GREED IS GOOD: ALGORITHMIC RESULTS FOR SPARSE APPROXIMATION
-function babel(A::AbstractMatrix, k::Integer)
-    μ₁ = zero(eltype(A))
-    inner = similar(@view(A[1, :]))
+babel(A::AbstractMatrix, k::Integer) = cumbabel(A, k)[k]
+
+Base.cumsum!(x::AbstractArray) = cumsum!(x, x)
+
+# calculates all babel function values from 1 to k
+function cumbabel(A::AbstractMatrix, k::Integer)
+    μ₁ = zeros(eltype(A), k)
+    inner = similar(A, size(A, 2))
     for (i, ai) in enumerate(eachcol(A))
         mul!(inner, A', ai)
         @. inner = abs(inner)
         inner[i] = 0 # inner product with self does not count
         partialsort!(inner, 1:k, rev = true) # pick largest k inner products
-        μ₁ = max(μ₁, sum(@view inner[1:k]))
+        innerk = @view inner[1:k]
+        μ₁ .= max.(μ₁, cumsum!(innerk))
     end
     return μ₁
 end
