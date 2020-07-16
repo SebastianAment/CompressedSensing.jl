@@ -21,15 +21,39 @@ end
 @testset "preconditioning" begin
     n, m, k = 64, 128, 6
     A, x, b = sparse_data(n = n, m = m, k = k, rescaled = false)
-    @. A = abs(A)
+    @. A = abs(A) # preconditioning important for coherence dictionaries
     normalize!(A)
     @. x = abs(x)
     b = A*x
-    P! = preconditioner(A)
-    PA = P!(copy(A))
-    for i in 1:k # test that preconditioner decreases babel function
-        @test babel(PA, k) < babel(A, k)
+
+    # svd-based preconditioner, generally yields good babel function improvements
+    PA = copy(A)
+    PA = normalize!(preconditioner(A)(PA)) # renormalize after preconditioning
+    μ = cumbabel(A, k)
+    Pμ = cumbabel(PA, k)
+    for i in 1:k  # test that preconditioner decreases babel function
+        @test Pμ[i] < μ[i]
+    end
+    # mean preconditioner, babel improvement of MA good but not as large as PA
+    ε = 1e-6
+    MA = copy(A)
+    normalize!(preconditioner(ε)(MA))
+    Mμ = cumbabel(MA, k)
+    for i in 1:k  # test that preconditioner decreases babel function
+        @test Mμ[i] < μ[i]
     end
 end
 
 end
+
+# display(μ)
+# display(Mμ)
+# display(Pμ)
+
+# PPA = copy(PA)
+# repeated application does change babel function, but not meaningfully
+# for _ in 1:6
+#     PPA = normalize!(preconditioner(PPA)(copy(PPA)))
+#     PPμ = cumbabel(PPA, k)
+#     display(PPμ)
+# end

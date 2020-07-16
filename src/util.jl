@@ -13,6 +13,7 @@ function sparse_data(;n = 32, m = 64, k = 3, min_x = 0., rescaled = true)
     A, x, b
 end
 
+########################### dictionary preconditioners #########################
 function normalize!(A::AbstractVecOrMat)
     A ./= sqrt.(sum(abs2, A, dims = 1))
 end
@@ -20,12 +21,12 @@ end
 # see "On the Uniqueness of Nonnegative Sparse Solutions to Underdetermined Systems of Equations", Bruckstein 2008
 function preconditioner(ε::Real)
     function p!(y, x)
-        y .= x .- ε*mean(x, dims = 1)
+        y .= x .- (1-ε)*mean(x, dims = 1)
     end
     p!(x) = p!(x, x)
     return p!
 end
-precondition!(A::AbstractVecOrMat, ε::Real) = preconditioner(ε)(A)
+# precondition!(A::AbstractVecOrMat, ε::Real) = preconditioner(ε)(A)
 
 # related but not identical to the one used in:
 # "Preconditioned Multiple Orthogonal Least Squares and Applications in Ghost Imaging via Sparsity Constraint"
@@ -41,24 +42,29 @@ function preconditioner(A::AbstractMatrix)
     p!(x) = p!(x, x)
     return p!
 end
+function preconditioner(A::AbstractMatrix{<:Real}, min_σ::Real = 1e-6)
+    svdA = svd(A)
+    U, S, V = svdA.U, svdA.S, svdA.V
+    function p!(y, x)
+        size(y) == size(x) || throw(DimensionMismatch("size(x) ≠ size(y)"))
+        z = similar(x, (size(U, 2), size(x, 2)))
+        mul!(z, U', x)
+        z ./= max.(S, min_σ)
+        mul!(y, U, z)
+    end
+    p!(x) = p!(x, x)
+    return p!
+end
 precondition!(A::AbstractMatrix) = preconditioner(A)(A)
 
+############################# dictionary analysis ##############################
 # calculates mutual coherence
-function coherence(A::AbstractMatrix)
-    μ = zero(eltype(A))
-    for (i, ai) in enumerate(eachcol(A))
-        for aj in eachcol(view(A, :, 1:i-1))
-            μ = max(μ, abs(dot(ai, aj)))
-        end
-    end
-    return μ
-end
+coherence(A::AbstractMatrix) = babel(A, 1)
 
 # Babel function, see GREED IS GOOD: ALGORITHMIC RESULTS FOR SPARSE APPROXIMATION
 babel(A::AbstractMatrix, k::Integer) = cumbabel(A, k)[k]
 
 Base.cumsum!(x::AbstractArray) = cumsum!(x, x)
-
 # calculates all babel function values from 1 to k
 function cumbabel(A::AbstractMatrix, k::Integer)
     μ₁ = zeros(eltype(A), k)
