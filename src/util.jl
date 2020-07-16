@@ -30,30 +30,21 @@ end
 
 # related but not identical to the one used in:
 # "Preconditioned Multiple Orthogonal Least Squares and Applications in Ghost Imaging via Sparsity Constraint"
-function preconditioner(A::AbstractMatrix)
-    svdA = svd(A)
-    U, S = svdA.U, svdA.S
-    function p!(y, x)
-        z = similar(x)
-        mul!(z, U', x)
-        z ./= S
-        mul!(y, U, z)
-    end
-    p!(x) = p!(x, x)
-    return p!
-end
-function preconditioner(A::AbstractMatrix{<:Real}, min_σ::Real = 1e-6)
+# preconditions using U*S⁻¹*U' where U, S, V is svd of A
+function preconditioner(A::AbstractMatrix{Float64}, min_σ::Real = 1e-6)
     svdA = svd(A)
     U, S, V = svdA.U, svdA.S, svdA.V
-    function p!(y, x)
-        size(y) == size(x) || throw(DimensionMismatch("size(x) ≠ size(y)"))
-        z = similar(x, (size(U, 2), size(x, 2)))
-        mul!(z, U', x)
-        z ./= max.(S, min_σ)
-        mul!(y, U, z)
-    end
-    p!(x) = p!(x, x)
-    return p!
+	k = size(U, 2)
+	function p!(y, x, z)
+		size(y) == size(x) || throw(DimensionMismatch("size(x) ≠ size(y)"))
+		mul!(z, U', x)
+		z ./= max.(S, min_σ)
+		mul!(y, U, z)
+	end
+	p!(y::AbstractMatrix, x::AbstractMatrix) = p!(y, x, similar(x, k, size(x, 2)))
+	p!(y::AbstractVector, x::AbstractVector) = p!(y, x, similar(x, k))
+	p!(x::AbstractVecOrMat) = p!(x, x)
+	return p!
 end
 precondition!(A::AbstractMatrix) = preconditioner(A)(A)
 
