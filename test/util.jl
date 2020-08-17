@@ -1,7 +1,8 @@
 module TestUtil
 using Test
 using LinearAlgebra
-using CompressedSensing: cumbabel, coherence, babel, sparse_data, precondition!, normalize!, preconditioner
+using CompressedSensing: cumbabel, coherence, babel, sparse_data,
+                precondition!, normalize!, preconditioner, dropindex!
 
 @testset "dictionary analysis" begin
     n, m, k = 64, 128, 16
@@ -42,6 +43,19 @@ end
     for i in 1:k  # test that preconditioner decreases babel function
         @test Mμ[i] < μ[i]
     end
+end
+using SparseArrays
+@testset "package extensions" begin
+    n = 16
+    x = spzeros(n)
+    k = 3
+    @. x[1:k] = 1:k
+    @test nnz(x) == k
+    dropindex!(x, 1)
+    @test x.nzind == [2, 3]
+    @test x.nzval == [2, 3]
+    @test nnz(x) == k-1
+    # TODO: argmin, findmin
 end
 
 end

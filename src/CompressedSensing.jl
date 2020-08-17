@@ -22,9 +22,9 @@ abstract type Update{T} end
 (U::Update)(x) = update!(U, x)
 
 # Compressed Sensing algorithms
+include("util.jl") # sparse data generator
 include("matchingpursuit.jl")
 include("basispursuit.jl")
 include("sbl.jl")
-include("util.jl") # sparse data generator
 
 end

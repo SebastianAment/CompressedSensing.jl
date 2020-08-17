@@ -21,7 +21,8 @@ end
 # see "On the Uniqueness of Nonnegative Sparse Solutions to Underdetermined Systems of Equations", Bruckstein 2008
 function preconditioner(ε::Real)
     function p!(y, x)
-        y .= x .- (1-ε)*mean(x, dims = 1)
+		μ = mean(x, dims = 1)
+        @. y = x - (1-ε) * μ
     end
     p!(x) = p!(x, x)
     return p!
@@ -70,3 +71,47 @@ function cumbabel(A::AbstractMatrix, k::Integer)
     end
     return μ₁
 end
+
+########################### SparseArrays conveniences ##########################
+# drops the ith index-value pair of x, if it is in nzind
+function dropindex!(x::SparseVector, i::Int)
+	j = findfirst(==(i), x.nzind)
+	if !isnothing(j)
+		deleteat!(x.nzind, j)
+		deleteat!(x.nzval, j)
+	end
+    return x
+end
+
+function Base.findmin(f, x::AbstractVector)
+    k, m = 0, Inf
+    for (i, xi) in enumerate(x)
+        fxi = f(xi)
+        if fxi < m
+            k, m = i, fxi
+        end
+    end
+    return m, k
+end
+Base.argmin(f, x::AbstractVector) = findmin(f, x)[2]
+function Base.findmax(f, x::AbstractVector)
+	g(x) = -f(x)
+	m, k = findmin(g, x)
+	return -m, k
+end
+Base.argmax(f, x::AbstractVector) = findmax(f, x)[2]
+
+# # TODO: this should be in util somewhere
+# using StatsBase: mean, std
+# # makes x mean zero along dimensions dims
+# function center!(x::AbstractVecOrMat, ε = 1e-6; dims = :)
+#     μ, σ = mean(x, dims = dims), std(x, dims = dims)
+#     @. x = (x - μ) / σ
+#     # @. x = (x - (1-ε)*μ) / σ
+#     return x, μ, σ
+# end
+# Base.inv(::typeof(center!)) = uncenter
+# function uncenter(x::AbstractVecOrMat, μ, σ)
+#     @. x = x * σ + μ
+#     x, y
+# end

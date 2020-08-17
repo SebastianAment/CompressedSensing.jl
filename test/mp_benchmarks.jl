@@ -14,7 +14,6 @@ if bench
     @btime omp($A, $b, $δ)
     # @btime omp($A, $b, $k)
     # # @btime sp($A, $b, $k)
-    @btime rmp_fb($A, $b, $δ, rescale = true)
     @btime rmp($A, $b, $δ, rescale = true)
 
     # Notes:

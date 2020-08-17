@@ -45,4 +45,21 @@ end
     @test xard.nzind == x.nzind
 end
 
+using CompressedSensing: ista, fista
+@testset "ISTA" begin
+    # equality constrained l1 minimization
+    n, m = 32, 64
+    k = 6
+    δ = 1e-1
+    min_x = 2e-2 # above noise-level to make bp work
+    A, x, b = sparse_data(n = n, m = m, k = k, min_x = min_x, rescaled = true)
+
+    λ = .1
+    xista = ista(A, b, λ, maxiter = 512)
+    droptol!(xista, δ)
+    @test xista.nzind == x.nzind
+
+    # TODO: FISTA
+end
+
 end

@@ -1,8 +1,11 @@
 module TestMatchingPursuit
 using Test
 using LinearAlgebra
-using CompressedSensing: MP, mp, OMP, omp, SP, sp, RMP, rmp, rmp_fb, sparse_data
+using CompressedSensing: MP, mp, OMP, omp, SP, sp, RMP, rmp, sparse_data,
+                        oomp, ompr
 using SparseArrays
+
+# TODO: pool tests of similar algorithms, e.g.: omp, oomp, ompr
 
 @testset "Matching Pursuit" begin
     n, m, k = 32, 32, 3
@@ -31,6 +34,44 @@ end
     # noiseless
     @test xomp.nzind == x.nzind
     @test isapprox(xomp.nzval, x.nzval, atol = 5σ)
+end
+
+@testset "Optimized OMP" begin
+    n, m, k = 32, 64, 4
+    A, x, b = sparse_data(n = n, m = m, k = k)
+    xomp = oomp(A, b, k)
+
+    # noiseless
+    @test xomp.nzind == x.nzind
+    @test xomp.nzval ≈ x.nzval
+
+    σ = 1e-2 # slightly noisy
+    @. b += σ*randn()
+    xomp = omp(A, b, k)
+    # noiseless
+    @test xomp.nzind == x.nzind
+    @test isapprox(xomp.nzval, x.nzval, atol = 5σ)
+end
+
+@testset "OMP with replacement" begin
+    n, m, k = 32, 64, 3
+    A, x, b = sparse_data(n = n, m = m, k = k)
+
+    δ = 1e-6
+    # xomp = zero(x)
+    # @. xomp[1:k] = 1
+    xomp = ompr(A, b, k, δ)
+
+    # noiseless
+    @test xomp.nzind == x.nzind
+    @test xomp.nzval ≈ x.nzval
+
+    # σ = 1e-2 # slightly noisy
+    # @. b += σ*randn()
+    # xomp = ompr(A, b, k)
+    # # noiseless
+    # @test xomp.nzind == x.nzind
+    # @test isapprox(xomp.nzval, x.nzval, atol = 5σ)
 end
 
 @testset "Subspace Pursuit" begin

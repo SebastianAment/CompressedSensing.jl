@@ -134,3 +134,69 @@ end
 function bpd_ecos_model()
     JuMP.Model(optimizer_with_attributes(ECOS.Optimizer, "verbose" => false))
 end
+
+################################ (F)ISTA ########################################
+struct FISTA end
+# TODO: use homotopy to select appropriate λ
+
+# shrinkage and thresholding operator
+shrinkage(x::Real, α::Real) = sign(x) * max(abs(x)-α, zero(x))
+
+# TODO fast iterative shrinkage and hard-thresholding algorithm
+# for weighted l1-norm minimization
+function fista(A::AbstractMatrix, b::AbstractVector, λ::Real, x::AbstractVector = spzeros(size(A, 2)))
+    w = fill(λ, size(x))
+    fista(A, b, w, x)
+end
+
+function l1(x::AbstractVector, w::AbstractVector)
+    length(x) == length(w) || throw(DimensionMismatch("length(x) ≠ length(w)"))
+    n = zero(eltype(x))
+    @simd for i in eachindex(x)
+        @inbounds n += w[i] * abs(x[i])
+    end
+    return n
+end
+
+# TODO: stepsize selection
+function ista(A, b, λ::Real, x = spzeros(size(A, 2)); maxiter::Int = 128)
+    ista(A, b, fill(λ, size(x)), x, maxiter = maxiter)
+end
+
+function ista(A::AbstractMatrix, b::AbstractVector, w::AbstractVector,
+                                        x::AbstractVector = spzeros(size(A, 2));
+                                        maxiter::Int = 128)
+    x = sparse(x)
+    r(x) = b-A*x # residual
+    f(x) = sum(abs2, r(x)) + l1(x, w)
+    g(x) = A'r(x) # negative gradient
+    α = .01 # step-size
+    fx = f(x)
+    for i in 1:1024
+        ∇ = g(x)
+        @. x = shrinkage(x + 2α*∇, w*α)
+        dropzeros!(x) # optimize sparse representation
+    end
+    return x
+end
+
+
+function fista(A::AbstractMatrix, b::AbstractVector, w::AbstractVector,
+                                        x::AbstractVector = spzeros(size(A, 2));
+                                        maxiter::Int = 128)
+    x = sparse(x)
+    r(x) = b-A*x # residual
+    f(x) = sum(abs2, r(x)) + l1(x, w)
+    g(x) = A'r(x) # negative gradient
+    α = .1 # step-size
+    tk = 1
+    for i in 1:16
+        ∇ = g(x)
+        tkn = (1 + sqrt(1 + 4tk^2)) / 2
+        y = xkn + (tk - 1) / tkn * (xkn - xk)
+        tk = tkn
+        @. x = shrinkage(x + 2*∇, w*α)
+        dropzeros!(x) # optimize sparse representation
+    end
+    return x
+end

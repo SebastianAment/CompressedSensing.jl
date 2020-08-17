@@ -1,7 +1,7 @@
 module TestSBL
 using Test
 using LinearAlgebra
-using CompressedSensing: sparse_data, SBL, greedy_sbl, rp
+using CompressedSensing: sparse_data, SBL, greedy_sbl, rmps
 using SparseArrays
 
 @testset "Sparse Bayesian Learning" begin
@@ -26,7 +26,7 @@ using SparseArrays
     @test findall(abs.(xgsbl) .> tol) == x.nzind
     @test isapprox(A*xgsbl, b, atol = 5σ)
 
-    xrp = rp(A, b, σ)
+    xrp = rmps(A, b, σ)
     @test findall(abs.(xrp) .> tol) == x.nzind
 end
 

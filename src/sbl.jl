@@ -160,9 +160,9 @@ function optimal_α(s::Real, q::Real)
     s < q^2 ? s^2 / (q^2 - s) : Inf
 end
 
-##################### Relevance Matching Pursuit ##############################
+##################### Relevance Matching Pursuit (RMP_σ) #########################
 # TODO: think about naming convention, since we have RMP0, too
-struct RelevancePursuit{T, AT<:AbstractMatrix{T}, BT, NT, A} <: Update{T}
+struct RMPS{T, AT<:AbstractMatrix{T}, BT, NT, A} <: Update{T}
     A::AT
     b::BT
     Σ::NT
@@ -173,16 +173,15 @@ struct RelevancePursuit{T, AT<:AbstractMatrix{T}, BT, NT, A} <: Update{T}
     Q::A
     δ::A # holds difference in marginal likelihood for updating an atom
 end
-const RP = RelevancePursuit
-function RP(A::AbstractMatrix, b::AbstractVector, σ::Real)
-    RP(A, b, σ^2*I(length(b)))
+function RMPS(A::AbstractMatrix, b::AbstractVector, σ::Real)
+    RMPS(A, b, σ^2*I(length(b)))
 end
-function RP(A::AbstractMatrix, b::AbstractVector, Σ)
+function RMPS(A::AbstractMatrix, b::AbstractVector, Σ)
     α = fill(Inf, size(A, 2))
     S, Q, δ = (similar(α) for i in 1:3)
-    RP(A, b, Σ, α, S, Q, δ)
+    RMPS(A, b, Σ, α, S, Q, δ)
 end
-function Base.getproperty(S::Union{GSBL, RP}, s::Symbol)
+function Base.getproperty(S::Union{GSBL, RMPS}, s::Symbol)
     if s == :x
         isactive = @. !isinf(S.α) # active basis patterns
         x = spzeros(eltype(S.A), size(S.A, 2))
@@ -196,8 +195,8 @@ function Base.getproperty(S::Union{GSBL, RP}, s::Symbol)
     end
 end
 
-function rp(A, b, σ; maxiter = size(A, 1), maxinneriter = 1size(A, 1), dl = 1e-2) # in RMP experiments this was dl = 1e-2
-    P = RP(A, b, σ)
+function rmps(A, b, σ; maxiter = size(A, 1), maxinneriter = 1size(A, 1), dl = 1e-2) # in RMP experiments this was dl = 1e-2
+    P = RMPS(A, b, σ)
 
     A, b, Σ, S, Q = P.A, P.b, P.Σ, P.S, P.Q
     α = P.α
