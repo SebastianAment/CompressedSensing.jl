@@ -2,11 +2,9 @@ module TestMatchingPursuit
 using Test
 using LinearAlgebra
 using CompressedSensing: MP, mp, OMP, omp, SP, sp, RMP, rmp, sparse_data,
-                        oomp, ompr
+                        ols, ompr, lmp
 using SparseArrays
-
-# TODO: pool tests of similar algorithms, e.g.: omp, oomp, ompr
-
+# TODO: pool tests of similar algorithms, e.g.: omp, ols, ompr
 @testset "Matching Pursuit" begin
     n, m, k = 32, 32, 3
     σ = 0.
@@ -36,10 +34,10 @@ end
     @test isapprox(xomp.nzval, x.nzval, atol = 5σ)
 end
 
-@testset "Optimized OMP" begin
+@testset "Orthogonal Least Squares" begin
     n, m, k = 32, 64, 4
     A, x, b = sparse_data(n = n, m = m, k = k)
-    xomp = oomp(A, b, k)
+    xomp = ols(A, b, k)
 
     # noiseless
     @test xomp.nzind == x.nzind
@@ -99,6 +97,11 @@ end
     # noiseless
     @test xrmp.nzind == x.nzind
     @test xrmp.nzval ≈ x.nzval
+
+    xlmp = lmp(A, b, k)
+    # noiseless
+    @test xlmp.nzind == x.nzind
+    @test xlmp.nzval ≈ x.nzval
 
     σ = 1e-3 # slightly noisy
     @. b += σ*randn()

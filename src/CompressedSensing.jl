@@ -23,7 +23,10 @@ abstract type Update{T} end
 
 # Compressed Sensing algorithms
 include("util.jl") # sparse data generator
+include("oblivious.jl")
 include("matchingpursuit.jl")
+include("forward.jl")
+include("backward.jl")
 include("basispursuit.jl")
 include("sbl.jl")
 

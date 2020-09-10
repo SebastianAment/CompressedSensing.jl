@@ -1,5 +1,7 @@
 abstract type AbstractMatchingPursuit{T} <: Update{T} end
 
+# TODO: lazy evaluation for OMP via approximate submodularity?
+
 ############################# Matching Pursuit #################################
 # should MP, OMP, have a k parameter?
 # SP needs one, but for MP could be handled in outer loop
@@ -58,7 +60,7 @@ function OMP(A::AbstractMatrix, b::AbstractVector, k::Integer = size(A, 1))
     T = eltype(A)
     r, Ar = zeros(T, n), zeros(T, m)
     # AiQR = UpdatableQR(reshape(A[:, 1], :, 1))
-    AiQR = PUQR(reshape(A[:, 1], :, 1))
+    AiQR = PUQR(reshape(A[:, 1], :, 1)) # PermutedUpdatableQR
     remove_column!(AiQR) # start with empty factorization
     OMP(A, b, k, r, Ar, AiQR)
 end
@@ -104,7 +106,6 @@ struct SubspacePursuit{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T}} <: Abstra
     Ai::AT # space for A[:, x.nzind] and its qr factorization
 end
 const SP = SubspacePursuit
-const SSP = SP
 
 function SP(A::AbstractMatrix, b::AbstractVector, k::Integer)
     2k > length(b) && error("2k = $(2k) > $(length(b)) = length(b) is invalid for Subspace Pursuit")
@@ -117,38 +118,40 @@ end
 
 # returns indices of k atoms with largest inner products with residual
 # could use threshold on P.Ar for adaptive stopping
-ssp_index!(P::SP, k::Int = P.k) = ompr_index!(P, k)
-ssp_acquisition!(P::SP, x, k::Int = P.k) = ompr_acquisition!(P, x, k)
-
+sp_index!(P::SP, k::Int = P.k) = ompr_index!(P, k)
+function sp_acquisition!(P::SP, x, k::Int = P.k)
+    residual!(P, x)
+    i = sp_index!(P, k)
+    @. x[i] = NaN
+    solve!(P, x)
+end
 # TODO: could pre-allocate nz arrays to be of length 2K
 # TODO: could add efficient qr updating
 function update!(P::SP, x::AbstractVector = spzeros(size(P.A, 2)), ε::Real = 0.)
-    if nnz(x) < P.k
-        ssp_acquisition!(P, x, P.k-nnz(x))
-    end
     nnz(x) == P.k || throw("nnz(x) = $(nnz(x)) ≠ $(P.k) = k")
-    ssp_acquisition!(P, x)
+    sp_acquisition!(P, x)
     i = partialsortperm(abs.(x.nzval), 1:nnz(x)-P.k) # find the smallest atoms
-    @. x.nzval[i] = 0
-
-    droptol!(x, ε)
+    sort!(i) # for deleteat! to work, indices need to be sorted
+    deleteat!(x.nzind, i)
+    deleteat!(x.nzval, i)
     solve!(P, x) # optimize all active atoms
 end
 
 # calculates k-sparse approximation to Ax = b via subspace pursuit
 # could also stop if indices are same between iterations
 function sp(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12; maxiter = 16)
-    P! = SP(A, b, k)
+    P = SP(A, b, k)
     x = spzeros(size(A, 2))
+    sp_acquisition!(P, x, P.k)
     for i in 1:maxiter
-        P!(x)
-        if norm(residual!(P!, x)) < δ # if we found a solution with the required sparsity we're done
+        update!(P, x)
+        if norm(residual!(P, x)) < δ # if we found a solution with the required sparsity we're done
             break
         end
     end
     return x
 end
-const ssp = sp
+
 ####################### Noiseless Relevance Pursuit ############################
 # Thought:
 # As long as we are not deleting, excluded irrelevant atoms cannot become relevant
@@ -272,8 +275,7 @@ function delete_irrelevant!(P::RMP, x::SparseVector, δ::Real)
     i = rmp_deletion_index!(P, x)
     if P.Ar[i] < δ
         x[i] = 0
-        # dropzeros!(P, x) # this updates the index set and factorization
-        dropindex!(P, x, i)
+        dropindex!(x, P.AiQR, i)
         ldiv!(x.nzval, P.AiQR, P.b) # optimize all active atoms
         return true
     else
@@ -289,11 +291,18 @@ function rmp(A::AbstractMatrix, b::AbstractVector, δ::Real = 1e-12,
     nzind = copy(x.nzind)
     n = size(A, 1)
     # for _ in 1:maxiter
-    for i in 1:n # acquisition stage (equivalent to OLS)
-        add_relevant!(P, x, δ) || break
+    for i in 1:n # acquisition stage (equivalent to OLS, OOMP, ORMP)
+        # add_relevant!(P, x, δ) || break
+        add_relevant!(P, x, 0)
+        norm(residual!(P, x)) ≥ δ || break
     end
     for i in 1:n # deletion stage (equivalent to backward greedy)
-        delete_irrelevant!(P, x, δ) || break
+        # delete_irrelevant!(P, x, δ) || break
+        delete_irrelevant!(P, x, 0)
+        if norm(residual!(P, x)) ≥ δ
+            add_relevant!(P, x, 0)
+            break
+        end
     end
     # nzind != x.nzind || break # if the index set hasn't changed
     # copy!(nzind, x.nzind)
@@ -313,26 +322,22 @@ end
 #     return x
 # end
 
-function dropindex!(P::RMP, x::SparseVector, i::Int)
-    j = findfirst(==(i), x.nzind)
-    if !isnothing(j)
-		deleteat!(x.nzind, j)
-		deleteat!(x.nzval, j)
-        remove_column!(P.AiQR, j)
-    end
-    return P
-end
-function SparseArrays.droptol!(P::RMP, x::SparseVector, tol::Real)
-    for i in reverse(eachindex(x.nzind)) # reverse is necessary to not mess up indexing into QR factorization
-        if abs(x.nzval[i]) ≤ tol
-            remove_column!(P.AiQR, i)
+# one-lookahead greedy two-step algorithm, based on RMP
+function lmp(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
+                            x = spzeros(eltype(A), size(A, 2)); maxiter = 2k)
+    P = RMP(A, b)
+    ompr_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
+    resnorm = norm(residual!(P, x))
+    for i in 1:maxiter
+        oldnorm = resnorm
+        add_relevant!(P, x, 0) # always add
+        delete_irrelevant!(P, x, Inf) # always delete
+        resnorm = norm(residual!(P, x))
+        if resnorm ≤ δ || oldnorm ≤ resnorm # until convergence or stationarity
+            break
         end
     end
-    droptol!(x, tol)
-end
-
-function SparseArrays.dropzeros!(P::RMP, x::SparseVector)
-    droptol!(P, x, 0)
+    return x
 end
 
 ############################# OMP with replacement #############################
@@ -363,18 +368,7 @@ end
 
 # η is stepsize
 function update!(P::OMPR, x::AbstractVector, η::Real = 1.)
-    if nnz(x) < P.k # make sure support set is of size k
-        @. x = 0
-        dropzeros!(x)
-        ind = sample(1:length(x), P.k, replace = false) # or could initialize with max inner products
-        @. x[ind] = NaN
-        for i in ind
-            add_column!(P.AiQR, @view(P.A[:,i]))
-        end
-        ldiv!(x.nzval, P.AiQR, P.b)
-    end
     nnz(x) == P.k || throw("nnz(x) = $(nnz(x)) ≠ $(P.k) = k")
-
     residual!(P, x)
     copy!(P.Ar, x)
     mul!(P.Ar, P.A', P.r, η, 1)
@@ -420,10 +414,22 @@ function update!(P::OMPR, x::AbstractVector, η::Real = 1.)
 end
 
 # k is desired sparsity level
-# l is cardinality of maximum replacement per iteration, l = k corresponds to ssp
+# l is cardinality of maximum replacement per iteration, l = k corresponds to sp
 function ompr(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
                                 x = spzeros(size(A, 2)); maxiter = size(A, 1))
     P = OMPR(A, b, k)
+
+    if nnz(x) < P.k # make sure support set is of size k
+        @. x = 0
+        dropzeros!(x)
+        ind = sample(1:length(x), P.k, replace = false) # or could initialize with max inner products
+        @. x[ind] = NaN
+        for i in ind
+            add_column!(P.AiQR, @view(P.A[:,i]))
+        end
+        ldiv!(x.nzval, P.AiQR, P.b)
+    end
+
     resnorm = norm(residual!(P, x))
     for i in 1:maxiter
         oldnorm = resnorm
@@ -435,40 +441,6 @@ function ompr(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
     end
     return x
 end
-
-############################# Optimized OMP ####################################
-# approximately solves Ax = b with error tolerance δ it at most k steps
-function oomp(A::AbstractMatrix, b::AbstractVector, k::Int = size(A, 1))
-    oomp(A, b, size(A, 1)*eps(eltype(b)), k)
-end
-function oomp(A::AbstractMatrix, b::AbstractVector, δ::Real, k::Int = size(A, 1),
-                                                        x = spzeros(size(A, 2)))
-    δ ≥ 0 || throw("δ = $δ has to be non-negative")
-    P = RMP(A, b, rescale = true)
-    for i in 1:k # acquisition stage of RMP (equivalent to OLS, OOMP, ORMP)
-        add_relevant!(P, x, zero(eltype(b)))
-        norm(residual!(P, x)) ≥ δ || break
-    end
-    return x
-end
-# const OLS = OOMP # a.k.a. orthogonal least-squares
-# const ORMP = OOMP # a.k.a order-recursive matching pursuit
-const ols = oomp
-const ormp = oomp
-
-############################## Backward Greedy #################################
-# TODO: calculates a solution to a full column rank (and not underdetermined)
-# linear system Ax = b with the backward greedy algorithm
-# function backward_greedy(A, b)
-#     AF = UpdatableQR(A)
-#     x = AF \ b
-#
-#     for i in 1:size(A, 2)
-#         remove_column!(AF, i)
-#         add_column(AF, )
-#     end
-#
-# end
 
 ####################### Matching Pursuit Helpers ###############################
 # calculates residual of
@@ -496,11 +468,15 @@ end
     partialsortperm(P.Ar, 1:k, rev = true)
 end
 
-function ompr_acquisition!(P::AbstractMatchingPursuit, x, k::Int = P.k)
+function ompr_acquisition!(P::AbstractMatchingPursuit, x = spzeros(size(P.A, 2)), k::Int = P.k)
     residual!(P, x)
-    i = ompr_index!(P, k)
-    @. x[i] = NaN
-    solve!(P, x)
+    ind = ompr_index!(P, k)
+    @. x[ind] = NaN
+    sort!(ind)
+    for i in ind
+        add_column!(P.AiQR, @view P.A[:, i])
+    end
+    ldiv!(x.nzval, P.AiQR, P.b)
 end
 
 ################################################################################
@@ -513,7 +489,7 @@ factorize!(P::AbstractMatchingPursuit, x::SparseVector) = factorize!(P, x.nzind)
     return qr!(Ai) # this still allocates a little memory
 end
 # ordinary least squares solve
-@inline function solve!(P::AbstractMatchingPursuit, x::AbstractVector, b::AbstractVector = P.b)
+@inline function solve!(P::SP, x::AbstractVector, b::AbstractVector = P.b)
     F = factorize!(P, x)
     ldiv!(x.nzval, F, b)     # optimize all active atoms
 end

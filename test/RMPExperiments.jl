@@ -13,10 +13,11 @@ using Plots
 plotlyjs()
 
 # pursuit algorithms
-using CompressedSensing: mp, omp,  oomp,
-                        ompr, sp,
+using CompressedSensing: mp, omp, oomp,
+                        ompr, sp, lmp,
                         rmps, rmp, greedy_sbl,
-                        bp, bp_candes, bp_ard
+                        bp, bp_candes, bp_ard,
+                        bpd, bpd_candes, bpd_ard
 
 # IDEA: use TaylorSeries + overloading to define
 # (approximations to) non-trivial matrix functions, like sin etc.
@@ -139,8 +140,9 @@ function get_mpk(k::Int, δ::Real, ε::Real)
     a3 = (A, b) -> droptol!(omp(A, b, δ, k), ε) # only runs k iterations of omp
     a4 = (A, b) -> droptol!(sp(A, b, k, δ), ε)
     # a5 = (A, b) -> droptol!(ompr(A, b, k, δ), ε)
-    algs = [a3, a4] #, a5]
-    names = ["omp k", "sp"] # , "ompr"]
+    a6 = (A, b) -> droptol!(lmp(A, b, k, δ), ε)
+    algs = [a3, a4, a6] #, a5]
+    names = ["omp k", "sp", "lmp"] # , "ompr"]
     return algs, names
 end
 
@@ -168,8 +170,9 @@ end
 function get_algorithms(k::Int, δ::Real)
     ε = 1e-4 # tolerance for support recovery
     w_ε = 1e-2 # reweighting parameter
+    # δ /= 2
     δ_mp = max(δ, 1e-6) # to account for numerical inaccuracies
-
+    # δ_mp /= 10
     rmp_alg, rmp_names = get_rmp(δ_mp, ε)
     mp_alg, mp_names = get_mp(δ_mp, ε)
     mpk_alg, mpk_names = get_mpk(k, δ_mp, ε)
@@ -181,11 +184,10 @@ function get_algorithms(k::Int, δ::Real)
 end
 
 # @threads
-function driver(n, m, k, nexp)
+function driver(n, m, k, nexp, δ::Real)
 
     begin
         coherent = true
-        δ = 0 # 1e-6 # noiseless recovery threshold
         perturbed = δ != 0
         algorithms, algnames = get_algorithms(k, δ)
         # if coherent
@@ -221,7 +223,7 @@ function run_experiment(save = false)
     m = 128
     nexp = 128
     δ = 0
-    _, algnames = get_algorithms(1, 0) # only used for names
+    _, algnames = get_algorithms(1, δ) # only used for names
     # algorithms, algnames = noisy_algorithms(1)
     # algorithms, algnames = mp_algorithms(1)
     if save
@@ -236,7 +238,7 @@ function run_experiment(save = false)
     end
 
     # karr = 1:1:7 # for coherent noisy
-    karr = [1, 2, 4, 8] #, 12, 16, 20, 24, 28] # for coherent noiseless
+    karr = [1, 2, 4, 8, 12] #, 16, 20, 24, 28] # for coherent noiseless
     # karr = 15:15
     # karr = 8:4:32
     # karr = 8:4:20
@@ -244,7 +246,7 @@ function run_experiment(save = false)
     nsuccess = zeros(nalg, length(karr))
     for (i, k) in enumerate(karr)
         println("$i, $k")
-        correct_support, residual, sparsity = driver(n, m, k, nexp)
+        correct_support, residual, sparsity = driver(n, m, k, nexp, δ)
         nsuccess[:, i] .= reshape(mean(correct_support, dims = 2), :)
         if save
             g_create(savefile, "$k")

@@ -1,3 +1,7 @@
+# helper
+colnorms(A::AbstractMatrix) = [norm(a) for a in eachcol(A)]
+
+########################### synthetic data generator ###########################
 function sparse_data(;n = 32, m = 64, k = 3, min_x = 0., rescaled = true)
     A = randn(n, m)
     if rescaled
@@ -8,14 +12,13 @@ function sparse_data(;n = 32, m = 64, k = 3, min_x = 0., rescaled = true)
     x = spzeros(m)
     ind = sort!(sample(1:m, k, replace = false))
     @. x[ind] = $rand((-1,1)) * max(abs(randn()), min_x)
-
     b = A*x
     A, x, b
 end
 
 ########################### dictionary preconditioners #########################
 function normalize!(A::AbstractVecOrMat)
-    A ./= sqrt.(sum(abs2, A, dims = 1))
+    A ./= colnorms(A)'
 end
 
 # see "On the Uniqueness of Nonnegative Sparse Solutions to Underdetermined Systems of Equations", Bruckstein 2008
@@ -81,6 +84,32 @@ function dropindex!(x::SparseVector, i::Int)
 		deleteat!(x.nzval, j)
 	end
     return x
+end
+const dropind! = dropindex!
+dropind!(x::SparseVector, i::AbstractVector{<:Int}) = dropind!.((x,), i)
+# simultaneously deletes an index of x and removes a column of a UpdatableQR
+function dropindex!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, i::Int)
+    j = findfirst(==(i), x.nzind)
+    if !isnothing(j)
+		_dropindex!(x, AiQR, j)
+    end
+    return x, AiQR
+end
+# WARNING: drops index j into x,nzval, NOT into x, as dropindex!
+function _dropindex!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, j::Int)
+	deleteat!(x.nzind, j)
+	deleteat!(x.nzval, j)
+	remove_column!(AiQR, j)
+	return x, AiQR
+end
+
+function SparseArrays.droptol!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, tol::Real)
+    for i in reverse(eachindex(x.nzind)) # reverse is necessary to not mess up indexing into QR factorization
+        if abs(x.nzval[i]) ≤ tol
+            remove_column!(P.AiQR, i)
+        end
+    end
+    return droptol!(x, tol), AiQR
 end
 
 function Base.findmin(f, x::AbstractVector)
