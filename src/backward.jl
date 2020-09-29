@@ -1,110 +1,87 @@
 # backward algorithms
 ######################### Backward Regression Algorithm ########################
 struct BackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T}, FT} <: AbstractMatchingPursuit{T}
-    A::AT
-    b::B
-
-    # temporary storage
+    A::AT # matrix
+    b::B # target
     r::B # residual
-    Ar::B # inner products between measurement matrix and residual
     AiQR::FT # updatable QR factorization of Ai
-
-    # Qa::B # length = k
-    # Qb::B
-    ε::B # residual norm difference
-    lazy::Bool
-    rescaling::B # energetic renormalization
+    δ::B # residual norm difference
 end
 const BR = BackwardRegression
 const BackwardGreedy = BackwardRegression
 const BOOMP = BR # a.k.a. Backward Optimized OMP
 
-# lazy = true switches on lazy evaluation of deletion criterion,
-# enabled by submodularity of the residual norm
-function BR(A::AbstractMatrix, b::AbstractVector; lazy::Bool = true)
+function BR(A::AbstractMatrix, b::AbstractVector)
     n, m = size(A)
-    T = eltype(A)
-    r, Ar = zeros(T, n), zeros(T, m)
+    r = zeros(eltype(A), m)
     # AiQR = UpdatableQR(A)
     AiQR = PUQR(A)
     rescaling = colnorms(A)
-    ε = fill(Inf, m)
-    return BR(A, b, r, Ar, AiQR, ε, lazy, rescaling)
+    δ = fill(-Inf, m)
+    return BR(A, b, r, AiQR, δ)
 end
-
-# updates vector of marginal norm increase ε
-function update!(P::BR, x::SparseVector)
-    # calculate norm of current solution
-    P.r .= P.b
-    mul!(P.r, P.A, x, -1, 1)
-    normr = norm(P.r)
-
-    # reduce all variables to support of x
-    A = @view P.A[:, x.nzind]
-    ε = @view P.ε[x.nzind]
-    n = length(x.nzind)
-    y = @view x.nzval[1:n-1] # temporary storage for coefficients of smaller problem
-
-    # we want to check indices with priorly smallest marginal norm increase first
-    order = collect(1:n)
-    perm = sortperm(ε)
-    order = permute!(order, perm)
-
-    minr = Inf # keep track of min marginal norm increase
-    for i in order # 1:n unordered
-        if ε[i] < minr || isinf(ε[i]) || !P.lazy # flag for lazy evaluation
-            a = @view A[:, i]
-            Ai = @view A[:, filter(!=(i), 1:length(x.nzind))]
-            remove_column!(P.AiQR, i)
-            ldiv!(y, P.AiQR, P.b)
-            P.r .= P.b
-            mul!(P.r, Ai, y, -1, 1)
-            add_column!(P.AiQR, a, i)
-            ε[i] = norm(P.r) - normr # marginal norm increase
-        end
-        minr = min(minr, ε[i])
-    end
-    return ε
-end
-
-# to abstract submodular function to use with generic greedy algorithm:
-# function f(nzind)
-#     A = P.A[:, nzind]
-#     norm(P.b) - norm(P.b - A*(A\P.b))
-# end
 
 # calculates a solution to a full column rank (not underdetermined)
 # linear system Ax = b with the backward greedy algorithm
-# TODO: k-sparse stopping criterion
-function br(A::AbstractMatrix, b::AbstractVector, δ::Real)
+# max_ε is the residual norm tolerance
+# max_δ is the largest marginal increase in residual norm before the algorithm terminates
+# k is the desired sparsity of the solution
+# whichever criterion is hit first
+function br(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k::Int)
     P = BR(A, b)
     x = P.AiQR \ b
     x = sparse(x)
     n, m = size(A)
-    while true
-        ε = update!(P, x)
-        m, i = findmin(ε) # drop the value which leads to the minimum residual norm
-        if m > δ # only delete if we don't cross error threshold
-            break
-        end
-        _dropindex!(x, P.AiQR, i) # i is index into x.nzval, NOT into x
-        ldiv!(x.nzval, P.AiQR, b)
+    for _ in m:-1:k+1
+        backward_step!(P, x, max_ε, max_δ) || break
     end
     return x
 end
 
-# calculates least-squares residual by leaving out the ith column
-# y is a temporary vector which stores the coefficients of the lookahead problem
-# function br_lookahead!(A, x::AbstractVector, i::Int, y::AbstractVector)
-#     a = @view P.A[:, nzi]
-#     # a = @view A[:, i]
-#     A = @view P.A[:, filter(!=(nzi), x.nzind)]
-#     remove_column!(P.AiQR, i)
-#     ldiv!(y, P.AiQR, P.b)
-#     P.r .= P.b
-#     mul!(P.r, A, y, -1, 1)
-#     add_column!(P.AiQR, a, i)
-# end
+# keyword version
+function br(A::AbstractMatrix, b::AbstractVector;
+     max_residual::Real = Inf, max_increase::Real = Inf, sparsity::Int = 0)
+     br(A, b, max_residual, max_increase, sparsity)
+end
+
+function backward_step!(P::Union{FR, BR}, x::SparseVector, max_ε::Real, max_δ::Real)
+    nnz(x) > 0 || return false
+    residual!(P.r, P.A, x, P.b)
+    normr = norm(P.r)
+    δ = backward_δ!(P, x, normr)
+    min_δ, i = findmin(δ) # drop the atom that leads to the minimum increase of the residual norm
+    if min_δ + normr < max_ε && min_δ < max_δ
+        _dropindex!(x, P.AiQR, i) # i is index into x.nzval, NOT into x
+        ldiv!(x.nzval, P.AiQR, P.b)
+        return true
+    else
+        ldiv!(x.nzval, P.AiQR, P.b)
+        return false
+    end
+end
+
+# updates vector of marginal norm increase δ
+# WARNING: assumes P.r == P.b - P.A*x
+# or normr = norm(P.b - P.A*x)
+function backward_δ!(P::Union{FR, BR}, x::SparseVector, normr = norm(P.r))
+    # reduce all variables to support of x
+    A = @view P.A[:, x.nzind]
+    δ = @view P.δ[x.nzind]
+    n = length(x.nzind)
+    # y = @view x.nzval[1:n-1] # temporary storage for coefficients of smaller problem
+    y = similar(x.nzval, n-1)
+    for i in 1:n # could be parallelized if y and P.r are separate for each thread
+        a = @view A[:, i]
+        Ai = @view A[:, filter(!=(i), 1:length(x.nzind))]
+        remove_column!(P.AiQR, i)
+        ldiv!(y, P.AiQR, P.b)
+        P.r .= P.b
+        mul!(P.r, Ai, y, -1, 1)
+        δ[i] = norm(P.r) - normr # marginal norm increase
+        add_column!(P.AiQR, a, i)
+    end
+    return δ
+end
 
 ################################# LACE #########################################
 # Least Absolute Coefficient Elimination
@@ -124,64 +101,59 @@ end
 
 # input x is assumed to be ls-solution with current active set
 function update!(L::LACE, x::SparseVector)
-    residual!(L, x)
+    L.r .= L.b
+    mul!(L.r, L.A, x, -1, 1)
+    # normr = norm(L.r)
     i = argmin(abs, x.nzval) # choose least absolute coefficient magnitude from current support
     _dropindex!(x, L.AiQR, i) # drops ith atom in active set
     ldiv!(x.nzval, L.AiQR, L.b) # optimize all active atoms
     return x
 end
 
-# A is overdetermined linear system, b is target, δ is tolerable residual norm
-function lace(A::AbstractMatrix, b::AbstractVector, δ::Real)
+# A is overdetermined linear system, b is target, ε is tolerable residual norm
+function lace(A::AbstractMatrix, b::AbstractVector, ε::Real, k::Int)
+    n, m = size(A)
     L = LACE(A, b)
-    x = spzeros(eltype(A), size(A, 2))
+    x = sparse(ones(eltype(A), size(A, 2)))
     ldiv!(x.nzval, L.AiQR, L.b)
-    while norm(L.r) < δ
+    for _ in m:-1:k+1
         update!(L, x)
+        if norm(L.r) > ε
+            break
+        end
     end
     return x
 end
 
-################################################################################
-# different implementation of backward regression
-# deletes most irrelevant atom, if any, as given by energetic subspace norm
-# function update!(P::BG, x::SparseVector, δ::Real)
-#     nnz(x) > 1 || return false
-#     i = deletion_index!(P, x)
-#     if P.Ar[i] < δ
-#         x[i] = 0
-#         dropindex!(P, x, i)
-#         ldiv!(x.nzval, P.AiQR, P.b) # optimize all active atoms
-#         return true
-#     else
-#         return false
-#     end
+########################### probabilistic bounds ###############################
+# calculates bound on maximum inner product of
+# standard normal random vector with n l2-normalized vectors
+# function normal_infbound(p, n)
+#     η = 2*(1-p)*sqrt(π/log(n))
+#     return sqrt(2*(1+η)*log(n))
 # end
-
-# function deletion_index!(P::BR, x::AbstractVector)
-#     residual!(P, x)
-#     backward_rescaling!(P, x)
-#     fudge = 1e-6 # fudge for stability
-#     @. P.Ar = abs(P.Ar) / max(P.rescaling, fudge)
-#     return argmin(P.Ar)
+#
+# # calculates a bound on the maximum absolute value
+# # of n standard normal random variables
+# # which is satisfied with probability p
+# function br_maxbound(p, n)
+#    d = (1+p^(1/n)) / 2
+#    return erfinv(d)
 # end
-
-# calculates energetic norm and inner product with b for all active atoms
-# function backward_rescaling!(P::BR, x::SparseVector)
-#     P.Ar .= Inf
-#     Qa, Qb = zeros(nnz(x)-1), zeros(nnz(x)-1) # pre-allocate this?
-#     for (i, nzi) in enumerate(x.nzind) # threads? would need several QRs!
-#         remove_column!(P.AiQR, i)
-#         a = @view P.A[:, nzi]
-#         Q = P.AiQR isa UpdatableQR ? P.AiQR.Q1 : P.AiQR.uqr.Q1
+# # calculates a bound on the minimum absolute value
+# # of n standard normal random variables
+# # which is satisfied with probability p
+# function br_minbound(p, n)
+#    d = 1 - (1-p)^(1/n) / 2
+#    return erfinv(d)
+# end
 #
-#         mul!(Qa, Q', a)
-#         mul!(Qb, Q', P.b)
-#         P.Ar[nzi] = dot(a, P.b) - dot(Qa, Qb)
-#         P.rescaling[nzi] = sum(abs2, a) - sum(abs2, Qa)
-#         P.rescaling[nzi] = sqrt(max(P.rescaling[nzi], 0))
-#
-#         add_column!(P.AiQR, a, i)
-#     end
-#     return P.rescaling
+# # computes both existing infbound, and the new min-max-bound
+# # p is probability with which the bound should hold
+# # n is size of linear system
+# # k is sparsity level of true solution
+# function br_compare_gaussian_bounds(p, n, k)
+#     dnew = br_maxbound(√p, k) + br_minbound(√p, n-k)
+#     dold = √2 * inner_infbound(p, (n-k)*k)
+#     return dnew, dold
 # end

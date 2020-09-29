@@ -76,6 +76,15 @@ function cumbabel(A::AbstractMatrix, k::Integer)
 end
 
 ########################### SparseArrays conveniences ##########################
+function addindex!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, a::AbstractVector, i::Int)
+    x[i] = NaN   # add non-zero index to active set
+    # efficiently update qr factorization using Givens rotations
+    qr_i = findfirst(==(i), x.nzind) # index in qr where new atom should be added
+    add_column!(AiQR, a, qr_i)
+    return x, AiQR
+end
+const addind! = addindex!
+
 # drops the ith index-value pair of x, if it is in nzind
 function dropindex!(x::SparseVector, i::Int)
 	j = findfirst(==(i), x.nzind)

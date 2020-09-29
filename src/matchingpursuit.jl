@@ -1,6 +1,7 @@
 abstract type AbstractMatchingPursuit{T} <: Update{T} end
 
-# TODO: lazy evaluation for OMP via approximate submodularity?
+# TODO: lazy evaluation for OMP via approximate submodularity? early dropping?
+# TODO: rename Ar for δ to be consistent with generalized matching pursuits
 
 ############################# Matching Pursuit #################################
 # should MP, OMP, have a k parameter?
@@ -34,9 +35,9 @@ end
 
 # calculates k-sparse approximation to Ax = b via matching pursuit
 function mp(A::AbstractMatrix, b::AbstractVector, k::Int, x = spzeros(size(A, 2)))
-    P! = MP(A, b, k)
+    P = MP(A, b, k)
     for i in 1:k
-        P!(x)
+        update!(P, x)
     end
     x
 end
@@ -69,30 +70,26 @@ function update!(P::OMP, x::AbstractVector = spzeros(size(P.A, 2)))
     residual!(P, x)
     i = argmaxinner!(P)
     ∉(i, x.nzind) || return x
-    # add non-zero index to active set
-    x[i] = NaN
-    # update qr factorization using Givens rotations
-    qr_i = findfirst(==(i), x.nzind) # index in qr where new atom should be added
-    a = @view P.A[:, i]
-    add_column!(P.AiQR, a, qr_i)
-    # least-squares solve for active atoms
-    ldiv!(x.nzval, P.AiQR, P.b)
+    addindex!(x, P, i)
     return x
 end
 
 # approximately solves Ax = b with error tolerance δ it at most k steps
-function omp(A::AbstractMatrix, b::AbstractVector, δ::Real, k::Int = size(A, 1))
-    δ ≥ 0 || throw("δ = $δ has to be non-negative")
+function omp(A::AbstractMatrix, b::AbstractVector, ε::Real, k::Int = size(A, 1))
+    ε ≥ 0 || throw("ε = $ε has to be non-negative")
     P = OMP(A, b)
     x = spzeros(size(A, 2))
     for i in 1:k
-        P(x)
-        norm(residual!(P, x)) ≥ δ || break
+        update!(P, x)
+        ldiv!(x.nzval, P.AiQR, b)
+        norm(residual!(P, x)) ≥ ε || break
     end
     return x
 end
 # calculates k-sparse approximation to Ax = b via orthogonal matching pursuit
-omp(A::AbstractMatrix, b::AbstractVector, k::Int) = omp(A, b, eps(eltype(A)), k)
+function omp(A::AbstractMatrix, b::AbstractVector, k::Int)
+    omp(A, b, eps(eltype(A)), k)
+end
 
 ################################## Subspace Pursuit ############################
 struct SubspacePursuit{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T}} <: AbstractMatchingPursuit{T}
@@ -118,7 +115,7 @@ end
 
 # returns indices of k atoms with largest inner products with residual
 # could use threshold on P.Ar for adaptive stopping
-sp_index!(P::SP, k::Int = P.k) = ompr_index!(P, k)
+sp_index!(P::SP, k::Int = P.k) = argmaxinner!(P, k)
 function sp_acquisition!(P::SP, x, k::Int = P.k)
     residual!(P, x)
     i = sp_index!(P, k)
@@ -146,194 +143,6 @@ function sp(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12; maxi
     for i in 1:maxiter
         update!(P, x)
         if norm(residual!(P, x)) < δ # if we found a solution with the required sparsity we're done
-            break
-        end
-    end
-    return x
-end
-
-####################### Noiseless Relevance Pursuit ############################
-# Thought:
-# As long as we are not deleting, excluded irrelevant atoms cannot become relevant
-# noiseless limit of greedy sbl algorithm
-struct RelevanceMatchingPursuit{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
-                                    FT} <: AbstractMatchingPursuit{T}
-    A::AT
-    b::B
-
-    # temporary storage
-    r::B # residual
-    Ar::B # inner products between measurement matrix and residual
-    QA::AT # (k, m)
-    AiQR::FT # updatable QR factorization of Ai
-
-    rescaling::B # energetic renormalization
-    rescale::Bool # toggles rescaling by energetic norm
-end
-const RMP = RelevanceMatchingPursuit
-
-function RMP(A::AbstractMatrix, b::AbstractVector; rescale::Bool = true)
-    n, m = size(A)
-    T = eltype(A)
-    r, Ar = zeros(T, n), zeros(T, m)
-    QA = zeros(T, (n, m))
-    AiQR = UpdatableQR(reshape(A[:, 1], :, 1))
-    # AiQR = PUQR(reshape(A[:, 1], :, 1))
-    remove_column!(AiQR)
-    rescaling = sqrt.(sum(abs2, A, dims = 1))
-    rescaling = reshape(rescaling, :)
-    RMP(A, b, r, Ar, QA, AiQR, rescaling, rescale)
-end
-
-# calculates energetic norm of all passive atoms
-function rmp_passive_rescaling!(P::RMP, x::SparseVector)
-    Q = P.AiQR isa UpdatableQR ? P.AiQR.Q1 : P.AiQR.uqr.Q1
-    QA = @view P.QA[1:nnz(x), :]
-    mul!(QA, Q', P.A)
-    sum!(abs2, P.rescaling', P.A) # unnecessary if P.A is normalized
-    k, m = size(QA)
-    for j in 1:m
-        @simd for i in 1:k
-            @inbounds P.rescaling[j] -= QA[i,j]^2
-        end
-    end
-    @. P.rescaling = sqrt(max(P.rescaling, 0))
-end
-
-# acquisition index
-function rmp_acquisition_index!(P::RMP, x::AbstractVector)
-    residual!(P, x)
-    mul!(P.Ar, P.A', P.r) # Ar = q
-    if P.rescale
-        rmp_passive_rescaling!(P, x)
-        fudge = 1e-6 # fudge for stability
-        @. P.Ar = abs(P.Ar) / max(P.rescaling, fudge)
-    else
-        @. P.Ar = abs(P.Ar)
-    end
-    @. P.Ar[x.nzind] = 0
-    return argmax(P.Ar)
-end
-
-function add_relevant!(P::RMP, x::AbstractVector, δ::Real)
-    nnz(x) < size(P.A, 1) || return false
-    i = rmp_acquisition_index!(P, x)
-    residual!(P, x)
-    # i = argmaxinner!(P)
-    if P.Ar[i] > δ
-        # add non-zero index to active set
-        x[i] = NaN
-        # efficiently update qr factorization using Givens rotations
-        qr_i = findfirst(==(i), x.nzind) # index in qr where new atom should be added
-        a = @view P.A[:, i]
-        add_column!(P.AiQR, a, qr_i)
-        # least-squares solve for active atoms
-        ldiv!(x.nzval, P.AiQR, P.b)
-        return true
-    else
-        return false
-    end
-end
-
-# calculates energetic norm and inner product with b for all active atoms
-function rmp_check_relevance!(P::RMP, x::SparseVector)
-    P.Ar .= Inf
-    Qa = zeros(nnz(x)-1)
-    Qb = zeros(nnz(x)-1)
-    for (i, nzi) in enumerate(x.nzind) # threads?
-        remove_column!(P.AiQR, i)
-        a = @view P.A[:, nzi]
-        # Q = P.AiQR.uqr.Q1
-        Q = P.AiQR isa UpdatableQR ? P.AiQR.Q1 : P.AiQR.uqr.Q1
-        mul!(Qa, Q', a)
-        if P.rescale
-            P.rescaling[nzi] = sum(abs2, a) - sum(abs2, Qa)
-            P.rescaling[nzi] = sqrt(max(P.rescaling[nzi], 0))
-        end
-        mul!(Qb, Q', P.b)
-        P.Ar[nzi] = dot(a, P.b) - dot(Qa, Qb)
-        add_column!(P.AiQR, a, i)
-    end
-    P.rescaling
-end
-
-function rmp_deletion_index!(P::RMP, x::AbstractVector)
-    residual!(P, x)
-    rmp_check_relevance!(P, x)
-    if P.rescale
-        fudge = 1e-6 # fudge for stability
-        @. P.Ar = abs(P.Ar) / max(P.rescaling, fudge)
-    else
-        @. P.Ar = abs(P.Ar)
-    end
-    return argmin(P.Ar)
-end
-
-# deletes most irrelevant atom, if any, as given by energetic subspace norm
-function delete_irrelevant!(P::RMP, x::SparseVector, δ::Real)
-    nnz(x) > 1 || return false
-    i = rmp_deletion_index!(P, x)
-    if P.Ar[i] < δ
-        x[i] = 0
-        dropindex!(x, P.AiQR, i)
-        ldiv!(x.nzval, P.AiQR, P.b) # optimize all active atoms
-        return true
-    else
-        return false
-    end
-end
-
-# TODO: benchmark! and test against other algs
-# provide option which gives k-sparse result
-function rmp(A::AbstractMatrix, b::AbstractVector, δ::Real = 1e-12,
-            x = spzeros(size(A, 2)); rescale::Bool = false)
-    P = RMP(A, b, rescale = rescale)
-    nzind = copy(x.nzind)
-    n = size(A, 1)
-    # for _ in 1:maxiter
-    for i in 1:n # acquisition stage (equivalent to OLS, OOMP, ORMP)
-        # add_relevant!(P, x, δ) || break
-        add_relevant!(P, x, 0)
-        norm(residual!(P, x)) ≥ δ || break
-    end
-    for i in 1:n # deletion stage (equivalent to backward greedy)
-        # delete_irrelevant!(P, x, δ) || break
-        delete_irrelevant!(P, x, 0)
-        if norm(residual!(P, x)) ≥ δ
-            add_relevant!(P, x, 0)
-            break
-        end
-    end
-    # nzind != x.nzind || break # if the index set hasn't changed
-    # copy!(nzind, x.nzind)
-    # end
-    return x
-end
-
-# function rmp(A::AbstractMatrix, b::AbstractVector, δ::Real = 1e-12,
-#             x = spzeros(size(A, 2)); maxiter = size(A, 1), rescale::Bool = false)
-#     P = RMP(A, b, rescale = rescale)
-#     for i in 1:maxiter
-#         add_relevant!(P, x, δ) || break
-#         for j in 1:maxiter # deletion stage
-#             delete_irrelevant!(P, x, δ) || break
-#         end
-#     end
-#     return x
-# end
-
-# one-lookahead greedy two-step algorithm, based on RMP
-function lmp(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
-                            x = spzeros(eltype(A), size(A, 2)); maxiter = 2k)
-    P = RMP(A, b)
-    ompr_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
-    resnorm = norm(residual!(P, x))
-    for i in 1:maxiter
-        oldnorm = resnorm
-        add_relevant!(P, x, 0) # always add
-        delete_irrelevant!(P, x, Inf) # always delete
-        resnorm = norm(residual!(P, x))
-        if resnorm ≤ δ || oldnorm ≤ resnorm # until convergence or stationarity
             break
         end
     end
@@ -372,7 +181,7 @@ function update!(P::OMPR, x::AbstractVector, η::Real = 1.)
     residual!(P, x)
     copy!(P.Ar, x)
     mul!(P.Ar, P.A', P.r, η, 1)
-    begin
+    begin # argmax of abs(P.Ar) over i not in x.nzind     # argmax( [abs(ar) for ar in P.Ar]
         m = 0.
         i = 0
         for (j, Arj) in enumerate(P.Ar)
@@ -385,9 +194,11 @@ function update!(P::OMPR, x::AbstractVector, η::Real = 1.)
             end
         end
     end
+
     if i == 0
         return x
     end
+
     # add non-zero index to active set
     x[i] = NaN
     qr_i = findfirst(==(i), x.nzind) # index in qr where new atom should be added
@@ -418,18 +229,11 @@ end
 function ompr(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
                                 x = spzeros(size(A, 2)); maxiter = size(A, 1))
     P = OMPR(A, b, k)
-
     if nnz(x) < P.k # make sure support set is of size k
         @. x = 0
         dropzeros!(x)
-        ind = sample(1:length(x), P.k, replace = false) # or could initialize with max inner products
-        @. x[ind] = NaN
-        for i in ind
-            add_column!(P.AiQR, @view(P.A[:,i]))
-        end
-        ldiv!(x.nzval, P.AiQR, P.b)
+        oblivious_acquisition!(P, x, P.k)
     end
-
     resnorm = norm(residual!(P, x))
     for i in 1:maxiter
         oldnorm = resnorm
@@ -444,17 +248,26 @@ end
 
 ####################### Matching Pursuit Helpers ###############################
 # calculates residual of
-@inline function residual!(P::AbstractMatchingPursuit, x::AbstractVector)
+function residual!(P::AbstractMatchingPursuit, x::AbstractVector)
     residual!(P.r, P.A, x, P.b)
 end
-@inline function residual!(r::AbstractVector, A::AbstractMatrix, x::AbstractVector, b::AbstractVector)
+function residual!(P, x::AbstractVector)
+    residual!(P.r, P.A, x, P.b)
+end
+function residual!(r::AbstractVector, A::AbstractMatrix, x::AbstractVector, b::AbstractVector)
     copyto!(r, b)
     mul!(r, A, x, -1, 1)
 end
+
+# adds non-zero at i, adds ith column of A to AiQR, and solves resulting ls-problem
+function addindex!(x::SparseVector, P::AbstractMatchingPursuit, i::Int)
+    addindex!(x, P.AiQR, @view(P.A[:, i]), i)
+    return x, P
+end
+
 ########################### acquisition criteria ###############################
 # WARNING: need to compute residual first
 # returns index of atom with largest dot product with residual
-# a.k.a omp_index
 @inline function argmaxinner!(P::AbstractMatchingPursuit) # 0 alloc
     mul!(P.Ar, P.A', P.r)
     @. P.Ar = abs(P.Ar)
@@ -462,17 +275,27 @@ end
 end
 
 # returns indices of k atoms with largest inner products with residual
-@inline function ompr_index!(P::AbstractMatchingPursuit, k::Int = P.k)
+@inline function argmaxinner!(P::AbstractMatchingPursuit, k::Int)
     mul!(P.Ar, P.A', P.r)
     @. P.Ar = abs(P.Ar)
     partialsortperm(P.Ar, 1:k, rev = true)
 end
 
-function ompr_acquisition!(P::AbstractMatchingPursuit, x = spzeros(size(P.A, 2)), k::Int = P.k)
-    residual!(P, x)
-    ind = ompr_index!(P, k)
+function random_acquisition!(P::AbstractMatchingPursuit, x::SparseVector, k::Int)
+    ind = sample(1:length(x), k, replace = false) # or could initialize with max inner products
     @. x[ind] = NaN
+    for i in ind
+        add_column!(P.AiQR, @view(P.A[:,i]))
+    end
+    ldiv!(x.nzval, P.AiQR, P.b)
+end
+
+# using oblivious algorithm to initialize P
+function oblivious_acquisition!(P::AbstractMatchingPursuit, x::SparseVector, k::Int = P.k)
+    residual!(P, x)
+    ind = argmaxinner!(P, k)
     sort!(ind)
+    @. x[ind] = NaN
     for i in ind
         add_column!(P.AiQR, @view P.A[:, i])
     end

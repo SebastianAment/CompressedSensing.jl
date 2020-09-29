@@ -27,7 +27,8 @@ include("oblivious.jl")
 include("matchingpursuit.jl")
 include("forward.jl")
 include("backward.jl")
-include("basispursuit.jl")
+include("rmp.jl")
 include("sbl.jl")
+include("basispursuit.jl")
 
 end

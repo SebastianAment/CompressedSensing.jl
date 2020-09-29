@@ -1,20 +1,34 @@
 module TestBackward
 using CompressedSensing
-using CompressedSensing: lace, br, sparse_data
+using CompressedSensing: sparse_data, br, lace
 
 using Test
 using LinearAlgebra
+
+# set up data
+n, k = 16, 3
+δ = 1e-2
+A, x, b = sparse_data(n = n, m = n, k = k, min_x = √2δ) # needs to be determined
+ε = randn(n)
+ε .*= δ/norm(ε)
+y = b + ε
+
 @testset "backward regression" begin
-    n, k = 32, 3
-    δ = .01
-    A, x, b = sparse_data(n = n, m = n, k = k, min_x = √2δ) # needs to be determined
-    ε = randn(n)
-    ε .*= δ/norm(ε)
-    y = b + ε
-    xbr = br(A, y, δ)
-    # display(xbr)
-    # display(x)
+    xbr = br(A, y, sparsity = k) # k-sparse approximation
     @test x.nzind == xbr.nzind # support recovery
+    xbr = br(A, y, max_residual = δ) # δ-accurate approximation
+    @test x.nzind == xbr.nzind
+    xbr = br(A, y, max_increase = δ) # approximation with no marginal norm increase above δ
+    @test x.nzind == xbr.nzind
+end
+
+@testset "lace" begin
+    xlace = lace(A, y, Inf, k) # k-sparse approximation
+    @test x.nzind == xlace.nzind # support recovery
+    # xbr = br(A, y, max_residual = δ) # δ-accurate approximation
+    # @test x.nzind == xbr.nzind
+    # xbr = br(A, y, max_increase = δ) # approximation with no marginal norm increase above δ
+    # @test x.nzind == xbr.nzind
 end
 
 function residual_magnitude(n::Int)

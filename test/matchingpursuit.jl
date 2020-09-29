@@ -1,115 +1,73 @@
 module TestMatchingPursuit
 using Test
 using LinearAlgebra
-using CompressedSensing: MP, mp, OMP, omp, SP, sp, RMP, rmp, sparse_data,
+using CompressedSensing: MP, mp, OMP, omp, SP, sp, rmp, sparse_data,
                         ols, ompr, lmp
 using SparseArrays
 # TODO: pool tests of similar algorithms, e.g.: omp, ols, ompr
-@testset "Matching Pursuit" begin
-    n, m, k = 32, 32, 3
-    σ = 0.
-    A, x, b = sparse_data(n = n, m = m, k = k, rescaled = true)
-
-    xmp = mp(A, b, 3k) # could give it more iterations, might re-optimize old atom
-    # noiseless
-    # @test xmp.nzind == x.nzind
-    @test isapprox(A*xmp, b, atol = 1e-2)
-    @test isapprox(xmp.nzval, x.nzval, atol = 1e-2)
-end
-
-@testset "Orthogonal Matching Pursuit" begin
-    n, m, k = 32, 64, 4
-    A, x, b = sparse_data(n = n, m = m, k = k)
-    xomp = omp(A, b, k)
-
-    # noiseless
-    @test xomp.nzind == x.nzind
-    @test xomp.nzval ≈ x.nzval
-
-    σ = 1e-2 # slightly noisy
-    @. b += σ*randn()
-    xomp = omp(A, b, k)
-    # noiseless
-    @test xomp.nzind == x.nzind
-    @test isapprox(xomp.nzval, x.nzval, atol = 5σ)
-end
-
-@testset "Orthogonal Least Squares" begin
-    n, m, k = 32, 64, 4
-    A, x, b = sparse_data(n = n, m = m, k = k)
-    xomp = ols(A, b, k)
-
-    # noiseless
-    @test xomp.nzind == x.nzind
-    @test xomp.nzval ≈ x.nzval
-
-    σ = 1e-2 # slightly noisy
-    @. b += σ*randn()
-    xomp = omp(A, b, k)
-    # noiseless
-    @test xomp.nzind == x.nzind
-    @test isapprox(xomp.nzval, x.nzval, atol = 5σ)
-end
-
-@testset "OMP with replacement" begin
+@testset "Matching Pursuits" begin
     n, m, k = 32, 64, 3
     A, x, b = sparse_data(n = n, m = m, k = k)
+    σ = 1e-2 # slightly noisy
+    ε = σ*randn(n)
 
-    δ = 1e-6
-    # xomp = zero(x)
-    # @. xomp[1:k] = 1
-    xomp = ompr(A, b, k, δ)
+    @testset "Matching Pursuit" begin
+        xmp = mp(A, b, 3k) # giving more iterations to optimize
+        @test isapprox(A*xmp, b, atol = 1e-3)
+        @test isapprox(xmp.nzval, x.nzval, atol = 1e-3)
+    end
 
-    # noiseless
-    @test xomp.nzind == x.nzind
-    @test xomp.nzval ≈ x.nzval
+    @testset "Orthogonal Matching Pursuit" begin
+        # noiseless
+        xomp = omp(A, b, k)
+        @test xomp.nzind == x.nzind
+        @test xomp.nzval ≈ x.nzval
+        # noisy
+        xomp = omp(A, b + ε, k)
+        @test xomp.nzind == x.nzind
+        @test isapprox(xomp.nzval, x.nzval, atol = 5σ)
+    end
 
-    # σ = 1e-2 # slightly noisy
-    # @. b += σ*randn()
-    # xomp = ompr(A, b, k)
-    # # noiseless
-    # @test xomp.nzind == x.nzind
-    # @test isapprox(xomp.nzval, x.nzval, atol = 5σ)
-end
+    @testset "OMP with replacement" begin
+        # noiseless
+        δ = 1e-6
+        xompr = ompr(A, b, k, δ)
+        @test xompr.nzind == x.nzind
+        @test xompr.nzval ≈ x.nzval
+        # slightly noisy
+        xomp = ompr(A, b + ε, k)
+        @test xomp.nzind == x.nzind
+        @test isapprox(xomp.nzval, x.nzval, atol = 5σ)
+    end
 
-@testset "Subspace Pursuit" begin
-    n, m, k = 32, 64, 3
-    A, x, b = sparse_data(n = n, m = m, k = k)
+    @testset "Subspace Pursuit" begin
+        xssp = sp(A, b, k)
+        # noiseless
+        @test xssp.nzind == x.nzind
+        @test isapprox(xssp.nzval, x.nzval)
+        # noiseless
+        xssp = sp(A, b + ε, k, 1e-2)
+        @test xssp.nzind == x.nzind
+        @test isapprox(xssp.nzval, x.nzval, atol = 5σ)
+    end
 
-    xssp = sp(A, b, k)
-    # noiseless
-    @test xssp.nzind == x.nzind
-    @test isapprox(xssp.nzval, x.nzval)
+    @testset "Relevance Matching Pursuit" begin
+        δ = 1e-6
+        xrmp = rmp(A, b, 0, 0, k)
+        # noiseless
+        @test xrmp.nzind == x.nzind
+        @test xrmp.nzval ≈ x.nzval
 
-    σ = 1e-2 # noisy
-    @. b += σ*randn()
-    xssp = sp(A, b, k, 1e-2)
-    # noiseless
-    @test xssp.nzind == x.nzind
-    @test isapprox(xssp.nzval, x.nzval, atol = 5σ)
-end
+        xlmp = lmp(A, b, k)
+        # noiseless
+        @test xlmp.nzind == x.nzind
+        @test xlmp.nzval ≈ x.nzval
 
-@testset "Relevance Matching Pursuit" begin
-    n, m, k = 32, 64, 4
-    A, x, b = sparse_data(n = n, m = m, k = k)
-    δ = 1e-6
-    xrmp = rmp(A, b, δ, rescale = true)
-    # noiseless
-    @test xrmp.nzind == x.nzind
-    @test xrmp.nzval ≈ x.nzval
-
-    xlmp = lmp(A, b, k)
-    # noiseless
-    @test xlmp.nzind == x.nzind
-    @test xlmp.nzval ≈ x.nzval
-
-    σ = 1e-3 # slightly noisy
-    @. b += σ*randn()
-    xrmp = rmp(A, b, 1e-2, rescale = false)
-    # noiseless
-
-    @test xrmp.nzind == x.nzind
-    @test isapprox(xrmp.nzval, x.nzval, atol = 1e-2)
+        # noisy
+        xrmp = rmp(A, b + ε, 1e-2, 0, k)
+        @test xrmp.nzind == x.nzind
+        @test isapprox(xrmp.nzval, x.nzval, atol = 5σ)
+    end
 end
 
 end # TestMatchingPursuit

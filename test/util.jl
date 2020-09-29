@@ -45,7 +45,7 @@ end
     end
 end
 using SparseArrays
-@testset "package extensions" begin
+@testset "SparseArrays extensions" begin
     n = 16
     x = spzeros(n)
     k = 3
