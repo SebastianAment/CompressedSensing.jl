@@ -3,19 +3,33 @@
 # provide option which gives k-sparse result
 # consecutive runs of forward and backward regression
 
+# δ is the largest marginal increase/decrease in residual norm before
+function rmp(A::AbstractMatrix, b::AbstractVector,
+            δ::Real, x = spzeros(size(A, 2)))
+    n = size(A, 1)
+    P = StepwiseRegression(A, b)
+    for _ in 1:n
+        forward_step!(P, x, 0, δ) || break # breaks if no change occured
+    end
+    for _ in nnz(x):-1:1
+        backward_step!(P, x, Inf, δ) || break # breaks if no change occured
+    end
+    return x
+end
+
 # max_ε is the residual norm tolerance
 # δ is the largest marginal increase/decrease in residual norm before
 # either forward or backward algorithm terminates
 # k is the desired sparsity of the solution
 function rmp(A::AbstractMatrix, b::AbstractVector,
-            max_ε::Real, δ::Real, k::Int, x = spzeros(size(A, 2)))
+            k::Int, x = spzeros(size(A, 2)))
     n = size(A, 1)
     P = StepwiseRegression(A, b)
     for _ in 1:n
-        forward_step!(P, x, max_ε, δ)
+        forward_step!(P, x, 0, 0) || break
     end
     for _ in nnz(x):-1:k+1
-        backward_step!(P, x, Inf, Inf)
+        backward_step!(P, x, Inf, Inf) || break
     end
     return x
 end

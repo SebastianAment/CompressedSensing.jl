@@ -1,14 +1,14 @@
 abstract type AbstractStepwiseRegression{T} end
 ######################### Forward Regression #############################
 struct ForwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
-                                    FT} <: AbstractMatchingPursuit{T}
+                        V<:AbstractVector{T}, QT<:AbstractMatrix{T}, FT} <: AbstractMatchingPursuit{T}
     A::AT # matrix
     b::B # target
-    r::B # residual
-    QA::AT # temporary storage
+    r::V # residual
+    QA::QT # temporary storage
     AiQR::FT # updatable QR factorization of Ai
-    δ::B # marginal decrease in objective value
-    rescaling::B # OLS rescaling
+    δ::V # marginal decrease in objective value
+    rescaling::V # OLS rescaling
 end
 const FR = ForwardRegression
 const OrthogonalLeastSquares = ForwardRegression # a.k.a.

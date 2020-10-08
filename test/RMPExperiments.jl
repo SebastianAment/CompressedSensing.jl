@@ -1,6 +1,5 @@
 # module RMPExperiments
 # RelevanceMatchingPursuit Experiments
-
 using LinearAlgebra
 using CompressedSensing
 using StatsBase: sample, mean

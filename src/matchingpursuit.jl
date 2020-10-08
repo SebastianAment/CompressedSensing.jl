@@ -45,14 +45,14 @@ end
 ###################### Orthogonal Matching Pursuit #############################
 # could extend: preconditioning, non-negativity constraint
 struct OrthogonalMatchingPursuit{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
-                                            FT} <: AbstractMatchingPursuit{T}
+                            V<:AbstractVector{T}, FT} <: AbstractMatchingPursuit{T}
     A::AT
     b::B
     k::Int # maximum number of non-zeros
 
     # temporary storage
-    r::B # residual
-    Ar::B # inner products between measurement matrix and residual
+    r::V # residual
+    Ar::V # inner products between measurement matrix and residual
     AiQR::FT # updatable QR factorization
 end
 const OMP = OrthogonalMatchingPursuit
@@ -67,10 +67,12 @@ function OMP(A::AbstractMatrix, b::AbstractVector, k::Integer = size(A, 1))
 end
 
 function update!(P::OMP, x::AbstractVector = spzeros(size(P.A, 2)))
+    nnz(x) < size(P.A, 1) || return x
     residual!(P, x)
     i = argmaxinner!(P)
     ∉(i, x.nzind) || return x
     addindex!(x, P, i)
+    ldiv!(x.nzval, P.AiQR, P.b)
     return x
 end
 
@@ -81,7 +83,6 @@ function omp(A::AbstractMatrix, b::AbstractVector, ε::Real, k::Int = size(A, 1)
     x = spzeros(size(A, 2))
     for i in 1:k
         update!(P, x)
-        ldiv!(x.nzval, P.AiQR, b)
         norm(residual!(P, x)) ≥ ε || break
     end
     return x
@@ -89,6 +90,11 @@ end
 # calculates k-sparse approximation to Ax = b via orthogonal matching pursuit
 function omp(A::AbstractMatrix, b::AbstractVector, k::Int)
     omp(A, b, eps(eltype(A)), k)
+end
+
+function omp(A::AbstractMatrix, b::AbstractVector;
+    max_residual = eps(eltype(A)), sparsity = size(A, 2))
+    omp(A, b, max_residual, sparsity)
 end
 
 ################################## Subspace Pursuit ############################
