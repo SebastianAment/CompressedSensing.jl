@@ -7,7 +7,7 @@ using LinearAlgebra
 using SparseArrays
 
 # set up data
-n, k = 8, 3
+n, k = 128, 16
 δ = 1e-2
 A, x, b = sparse_data(n = n, m = n, k = k, min_x = √2δ) # needs to be determined
 ε = randn(n)
@@ -40,9 +40,10 @@ end
     xbr = fbr(A, y, max_increase = δ) # approximation with no marginal norm increase above δ
     @test x.nzind == xbr.nzind
 end
-
-# using BenchmarkTools
-# @btime
+#
+using BenchmarkTools
+@btime br($A, $y, sparsity = $k)
+@btime fbr($A, $y, sparsity = $k)
 
 function residual_magnitude(n::Int)
     A = randn(n, n-1)

@@ -29,10 +29,9 @@ end
 # k is the desired sparsity of the solution
 # whichever criterion is hit first
 function br(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k::Int)
+    m = size(A, 2)
     P = BR(A, b)
-    x = P.AiQR \ b
-    x = sparse(x)
-    n, m = size(A)
+    x = sparsevec(1:m, P.AiQR \ b)
     for _ in m:-1:k+1
         backward_step!(P, x, max_ε, max_δ) || break
     end
@@ -99,7 +98,7 @@ struct FastBackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
     b::B # target
     r::V # residual
     AA⁻¹::AAT # stores AA⁻¹ corresonding to active set in upper left block
-    AA⁻¹A::AAT
+    Ab::V # stores A' * b
     δ::V # residual norm difference
 end
 const FBR = FastBackwardRegression
@@ -111,9 +110,9 @@ end
 function FBR(A::AbstractMatrix, b::AbstractVector, r::AbstractVector, F::Factorization)
     n, m = size(A)
     AA = F.R \ Matrix(F.R' \ I(m))
-    AAA = F.R \ F.Q'
+    Ab = A'b
     δ = zeros(m)
-    return FBR(A, b, r, AA, AAA, δ)
+    return FBR(A, b, r, AA, Ab, δ)
 end
 function FBR(A::AbstractMatrix, b::AbstractVector, r::AbstractVector, F::PUQR)
     n, m = size(F)
@@ -121,27 +120,24 @@ function FBR(A::AbstractMatrix, b::AbstractVector, r::AbstractVector, F::PUQR)
     AA = E.R1 \ Matrix(E.R1' \ I(m))
     ip = invperm(F.perm)
     AA = AA[ip, ip]
-    AAA = E.R1 \ E.Q1'
-    AAA = AAA[ip, :]
+    Ab = A'b
     δ = zeros(m)
-    return FBR(A, b, r, AA, AAA, δ)
+    return FBR(A, b, r, AA, Ab, δ)
 end
 # build FBR object from existing ForwardRegression object
 function FBR(P::FR)
     FBR(P.A, P.b, P.r, P.AiQR)
 end
 # TODO: has some overlap with BackwardRegression, which could be consolidated
-# keyword version
 function fbr(A::AbstractMatrix, b::AbstractVector;
      max_residual::Real = Inf, max_increase::Real = Inf, sparsity::Int = 0)
-     br(A, b, max_residual, max_increase, sparsity)
+     fbr(A, b, max_residual, max_increase, sparsity)
 end
 
 function fbr(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k::Int)
+    m = size(A, 2)
     P = FBR(A, b)
-    x = P.AA⁻¹A * P.b
-    x = sparse(x)
-    n, m = size(A)
+    x = sparsevec(1:m, P.AA⁻¹ * P.Ab)
     for i in m:-1:k+1
         backward_step!(P, x, max_ε, max_δ) || break
     end
@@ -150,30 +146,34 @@ end
 
 function backward_step!(P::FBR, x::SparseVector, max_ε::Real, max_δ::Real)
     nnz(x) > 0 || return false
-    residual!(P.r, P.A, x, P.b)
-    normr = norm(P.r)
+    normr = norm(residual!(P.r, P.A, x, P.b))
     δ = backward_δ!(P, x)
     min_δ, i = findmin(δ) # drop the atom that leads to the minimum increase of the residual norm
     new_norm = sqrt(min_δ + normr^2) # since δ is the marginal increase of squared norm
     if new_norm < max_ε && min_δ < max_δ
         _dropindex!(x, P, i) # i is index into x.nzval, NOT into x
-        AA⁻¹A = @view P.AA⁻¹A[1:nnz(x), :]
-        mul!(x.nzval, AA⁻¹A, P.b)
+        _solve!(P, x)
         return true
     else
-        AA⁻¹A = @view P.AA⁻¹A[1:nnz(x), :]
-        mul!(x.nzval, AA⁻¹A, P.b)
+        _solve!(P, x)
         return false
     end
 end
 
+# solves the least squares problem constrained to non-zero elements of x
+# WARNING: assumes P.AA⁻¹ is updated correctly
+function _solve!(P::FBR, x::SparseVector)
+    AA⁻¹, Ab = @views P.AA⁻¹[1:nnz(x), 1:nnz(x)], P.Ab[x.nzind]
+    mul!(x.nzval, AA⁻¹, Ab)
+    return x
+end
+
 function backward_δ!(P::FBR, x::SparseVector)
     m = nnz(x)
-    AA⁻¹, AA⁻¹A = @views P.AA⁻¹[1:m, 1:m], P.AA⁻¹A[1:m, :]
+    AA⁻¹ = @views P.AA⁻¹[1:m, 1:m]
     δ = @view P.δ[1:m]
-    γ = diag(AA⁻¹)
-    mul!(δ, AA⁻¹A, P.b)
-    @. δ =  δ^2 / γ
+    γ = @view AA⁻¹[diagind(AA⁻¹)]
+    @. δ = x.nzval^2 / γ # since x = AA⁻¹ * A' * P.b
 end
 
 # drops the ith index of x and updates the matrices AA⁻¹, AA⁻¹A accordingly
@@ -182,11 +182,10 @@ function _dropindex!(x::SparseVector, P::FBR, i::Int)
     m = nnz(x)
     deleteat!(x.nzind, i)
     deleteat!(x.nzval, i)
-    A, AA⁻¹, AA⁻¹A = @views P.A[:, x.nzind], P.AA⁻¹[1:m, 1:m], P.AA⁻¹A[1:m, :]
+    A, AA⁻¹ = @views P.A[:, x.nzind], P.AA⁻¹[1:m, 1:m]
     active = 1:m .!= i
-    G, g, γ = @views AA⁻¹[active, active], AA⁻¹[i, active], AA⁻¹[i, i]
-    P.AA⁻¹[1:m-1, 1:m-1] = G - g * g' / γ # inv(A'A)
-    P.AA⁻¹A[1:m-1, :] .= P.AA⁻¹[1:m-1, 1:m-1] * A' # inv(A'A) * A'
+    G, g, γ = AA⁻¹[active, active], AA⁻¹[i, active], AA⁻¹[i, i]
+    @. P.AA⁻¹[1:m-1, 1:m-1] = G - g * g' / γ # inv(A'A)
     return x, P
 end
 
