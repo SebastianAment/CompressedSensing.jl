@@ -11,6 +11,7 @@ function rmp(A::AbstractMatrix, b::AbstractVector,
     for _ in 1:n
         forward_step!(P, x, 0, δ) || break # breaks if no change occured
     end
+    P = FastBackwardRegression(P)
     for _ in nnz(x):-1:1
         backward_step!(P, x, Inf, δ) || break # breaks if no change occured
     end

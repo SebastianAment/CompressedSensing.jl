@@ -55,6 +55,7 @@ function backward_step!(P::Union{FR, BR}, x::SparseVector, max_ε::Real, max_δ:
     normr = norm(P.r)
     δ = backward_δ!(P, x, normr)
     min_δ, i = findmin(δ) # drop the atom that leads to the minimum increase of the residual norm
+    new_norm = sqrt(min_δ + normr^2) # since δ is the marginal increase in norm
     if min_δ + normr < max_ε && min_δ < max_δ
         _dropindex!(x, P.AiQR, i) # i is index into x.nzval, NOT into x
         ldiv!(x.nzval, P.AiQR, P.b)
@@ -85,10 +86,108 @@ function backward_δ!(P::Union{FR, BR}, x::SparseVector, normr = norm(P.r))
         P.r .= P.b
         mul!(P.r, Ai, y, -1, 1)
         δ[i] = norm(P.r)^2 - normr^2 # marginal squared norm increase
-        δ[i] = sqrt(max(δ[i], 0)) # square-root of marginal squared norm increase
         add_column!(P.AiQR, a, i)
     end
     return δ
+end
+################################################################################
+# see "An Efficient Implementation of the Backward Greedy Algorithm for Sparse Signal Reconstruction"
+# WARNING: potentially more susceptible to ill-conditioned systems
+struct FastBackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
+            V<:AbstractVector{T}, AAT<:AbstractMatrix{T}} <: AbstractMatchingPursuit{T}
+    A::AT # matrix
+    b::B # target
+    r::V # residual
+    AA⁻¹::AAT # stores AA⁻¹ corresonding to active set in upper left block
+    AA⁻¹A::AAT
+    δ::V # residual norm difference
+end
+const FBR = FastBackwardRegression
+function FBR(A::AbstractMatrix, b::AbstractVector)
+    r = similar(b)
+    return FBR(A, b, r, qr(A))
+end
+# utilizing the already existing QR-factorization
+function FBR(A::AbstractMatrix, b::AbstractVector, r::AbstractVector, F::Factorization)
+    n, m = size(A)
+    AA = F.R \ Matrix(F.R' \ I(m))
+    AAA = F.R \ F.Q'
+    δ = zeros(m)
+    return FBR(A, b, r, AA, AAA, δ)
+end
+function FBR(A::AbstractMatrix, b::AbstractVector, r::AbstractVector, F::PUQR)
+    n, m = size(F)
+    E = F.uqr
+    AA = E.R1 \ Matrix(E.R1' \ I(m))
+    ip = invperm(F.perm)
+    AA = AA[ip, ip]
+    AAA = E.R1 \ E.Q1'
+    AAA = AAA[ip, :]
+    δ = zeros(m)
+    return FBR(A, b, r, AA, AAA, δ)
+end
+# build FBR object from existing ForwardRegression object
+function FBR(P::FR)
+    FBR(P.A, P.b, P.r, P.AiQR)
+end
+# TODO: has some overlap with BackwardRegression, which could be consolidated
+# keyword version
+function fbr(A::AbstractMatrix, b::AbstractVector;
+     max_residual::Real = Inf, max_increase::Real = Inf, sparsity::Int = 0)
+     br(A, b, max_residual, max_increase, sparsity)
+end
+
+function fbr(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k::Int)
+    P = FBR(A, b)
+    x = P.AA⁻¹A * P.b
+    x = sparse(x)
+    n, m = size(A)
+    for i in m:-1:k+1
+        backward_step!(P, x, max_ε, max_δ) || break
+    end
+    return x
+end
+
+function backward_step!(P::FBR, x::SparseVector, max_ε::Real, max_δ::Real)
+    nnz(x) > 0 || return false
+    residual!(P.r, P.A, x, P.b)
+    normr = norm(P.r)
+    δ = backward_δ!(P, x)
+    min_δ, i = findmin(δ) # drop the atom that leads to the minimum increase of the residual norm
+    new_norm = sqrt(min_δ + normr^2) # since δ is the marginal increase of squared norm
+    if new_norm < max_ε && min_δ < max_δ
+        _dropindex!(x, P, i) # i is index into x.nzval, NOT into x
+        AA⁻¹A = @view P.AA⁻¹A[1:nnz(x), :]
+        mul!(x.nzval, AA⁻¹A, P.b)
+        return true
+    else
+        AA⁻¹A = @view P.AA⁻¹A[1:nnz(x), :]
+        mul!(x.nzval, AA⁻¹A, P.b)
+        return false
+    end
+end
+
+function backward_δ!(P::FBR, x::SparseVector)
+    m = nnz(x)
+    AA⁻¹, AA⁻¹A = @views P.AA⁻¹[1:m, 1:m], P.AA⁻¹A[1:m, :]
+    δ = @view P.δ[1:m]
+    γ = diag(AA⁻¹)
+    mul!(δ, AA⁻¹A, P.b)
+    @. δ =  δ^2 / γ
+end
+
+# drops the ith index of x and updates the matrices AA⁻¹, AA⁻¹A accordingly
+function _dropindex!(x::SparseVector, P::FBR, i::Int)
+    j = x.nzind[i]
+    m = nnz(x)
+    deleteat!(x.nzind, i)
+    deleteat!(x.nzval, i)
+    A, AA⁻¹, AA⁻¹A = @views P.A[:, x.nzind], P.AA⁻¹[1:m, 1:m], P.AA⁻¹A[1:m, :]
+    active = 1:m .!= i
+    G, g, γ = @views AA⁻¹[active, active], AA⁻¹[i, active], AA⁻¹[i, i]
+    P.AA⁻¹[1:m-1, 1:m-1] = G - g * g' / γ # inv(A'A)
+    P.AA⁻¹A[1:m-1, :] .= P.AA⁻¹[1:m-1, 1:m-1] * A' # inv(A'A) * A'
+    return x, P
 end
 
 ################################# LACE #########################################

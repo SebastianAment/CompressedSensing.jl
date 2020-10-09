@@ -19,11 +19,11 @@ struct SparseBayesianLearning{T, AT, BT, GT} <: Update{T}
 end
 const SBL = SparseBayesianLearning
 # TODO: prune indices? with SparseArrays
-# TODO: for better conditioning
+# for better conditioning
 # C = (sqrt(Γ)*AΣA*sqrt(Γ) + I)
 # B = inverse(sqrt(Γ)) * C * inverse(sqrt(Γ))
 # CG could work well, because we have good initial x's between iterations
-# TODO: for noiseless L0 norm minimization: B = sqrt(Γ)*pseudoinverse(A * sqrt(Γ))
+# for noiseless L0 norm minimization: B = sqrt(Γ)*pseudoinverse(A * sqrt(Γ))
 function update!(S::SBL, x::AbstractVector = zeros(size(S.Γ, 2)))
     AΣA, AΣb, Γ = S.AΣA, S.AΣb, S.Γ
     B = AΣA + inverse(Γ) # woodury makes sense if number of basis functions is larger than x
@@ -34,11 +34,25 @@ function update!(S::SBL, x::AbstractVector = zeros(size(S.Γ, 2)))
     @. Γ.diag = x^2 / (1 - $diag($inverse(B)) / Γ.diag) + 1e-14 # good heuristic
     return x
 end
+
+sbl(A, b, σ::Real) = sbl(A, b, σ^2*I(length(b)))
+function sbl(A::AbstractMatrix, b::AbstractVector, Σ::AbstractMatOrUni;
+                        maxiter::Int = size(A, 1), min_change::Real = 1e-6)
+    P = SBL(A, b, Σ)
+    x = zeros(size(A, 2))
+    for _ in 1:maxiter
+        update!(P, x)
+    end
+    return x
+end
+
 # updating noise variance (if scalar)
 # B⁻¹ = inverse(B)
 # σ² = sum(abs2, b-A*x) / sum(i->B[i]/Γ[i], diagind(Γ)) # could replace with euclidean norm
 
 ##################### greedy marginal likelihood optimization ##################
+# updates the prior variance which leads to the largest
+# increase in the marginal likelihood
 struct GreedySparseBayesianLearning{T, AT<:AbstractMatrix{T}, BT, NT, A} <: Update{T}
     A::AT
     b::BT
@@ -61,25 +75,25 @@ function GSBL(A::AbstractMatrix, b::AbstractVector, σ::Real)
     GSBL(A, b, σ^2*I(length(b)))
 end
 
-function optimize!(sbl::GSBL; maxiter = 128, dx = 1e-2)
+function optimize!(P::GSBL; maxiter = 128, dl = 1e-2)
     for i in 1:maxiter
-        sbl(sbl.α)
-        if maximum(sbl.δ) < dx
+        update!(P, P.α)
+        if maximum(P.δ) < dl
             break
         end
     end
-    sbl
+    return P
 end
 
-function greedy_sbl(A, b, σ; maxiter = 128, dx = 1e-2)
-    sbl = GSBL(A, b, σ)
-    optimize!(sbl)
-    sbl.x
+function greedy_sbl(A, b, σ; maxiter = 256, dl = 1e-4)
+    P = GSBL(A, b, σ)
+    optimize!(P, maxiter = maxiter, dl = dl)
+    P.x
 end
 
-function update!(sbl::GSBL, α::AbstractVector)
+function update!(P::GSBL, α::AbstractVector)
     isactive = @. !isinf(α) # active basis patterns
-    A, b, Σ, S, Q = sbl.A, sbl.b, sbl.Σ, sbl.S, sbl.Q
+    A, b, Σ, S, Q = P.A, P.b, P.Σ, P.S, P.Q
     # get kernel matrix C
     if any(isactive)
         Ai = @view A[:, isactive]
@@ -96,8 +110,8 @@ function update!(sbl::GSBL, α::AbstractVector)
         Q[k] = quality(C⁻¹, b, Ak)
     end
     # potential change in marginal likelihood for each atom
-    @. sbl.δ = delta(α, S, Q)
-    return update_α!(α, sbl.δ, S, Q)
+    @. P.δ = delta(α, S, Q)
+    return update_α!(α, P.δ, S, Q)
 end
 
 function sparsity(C⁻¹::AbstractMatOrFac, a::AbstractVector)
@@ -146,6 +160,7 @@ function δ_update(S, Q, α, αn)
 end
 
 # calculate small s, q from S, Q (see Tipping 2003)
+# also known as sparsity and quality factors
 function sq(S::Real, Q::Real, α::Real)
     if α < Inf
         s = α*S / (α-S)
@@ -161,8 +176,7 @@ function optimal_α(s::Real, q::Real)
 end
 
 ##################### Relevance Matching Pursuit (RMP_σ) #########################
-# TODO: think about naming convention, since we have RMP0, too
-struct RMPS{T, AT<:AbstractMatrix{T}, BT, NT, A} <: Update{T}
+struct RMPS{T, AT<:AbstractMatrix{T}, BT, NT, A, CT} <: Update{T}
     A::AT
     b::BT
     Σ::NT
@@ -172,14 +186,19 @@ struct RMPS{T, AT<:AbstractMatrix{T}, BT, NT, A} <: Update{T}
     S::A
     Q::A
     δ::A # holds difference in marginal likelihood for updating an atom
+    C⁻¹::CT
 end
 function RMPS(A::AbstractMatrix, b::AbstractVector, σ::Real)
     RMPS(A, b, σ^2*I(length(b)))
 end
-function RMPS(A::AbstractMatrix, b::AbstractVector, Σ)
-    α = fill(Inf, size(A, 2))
+function RMPS(A::AbstractMatrix, b::AbstractVector, Σ::AbstractMatOrFac)
+    n, m = size(A)
+    α = fill(Inf, m)
     S, Q, δ = (similar(α) for i in 1:3)
-    RMPS(A, b, Σ, α, S, Q, δ)
+    isactive = @. !isinf(α)
+    C⁻¹ = get_C_inverse(isactive, A, α, Σ)
+    C⁻¹ = Matrix(C⁻¹)
+    RMPS(A, b, Σ, α, S, Q, δ, C⁻¹)
 end
 function Base.getproperty(S::Union{GSBL, RMPS}, s::Symbol)
     if s == :x
@@ -195,31 +214,34 @@ function Base.getproperty(S::Union{GSBL, RMPS}, s::Symbol)
     end
 end
 
-function rmps(A, b, σ; maxiter = size(A, 1), maxinneriter = 1size(A, 1), dl = 1e-2) # in RMP experiments this was dl = 1e-2
+# σ is the noise variance
+# maxiter is the maximum number of outer iterations
+# maxiter_acquisition is the maximum number of iterations per aquisition stage
+# maxiter_deletion is the maximum number of iterations per deletion stage
+# dl is the minimum increase in marginal likelihood, below which the algorithm terminates
+function rmps(A, b, σ; maxiter::Int = 2,
+                    maxiter_acquisition::Int = size(A, 1),
+                    maxiter_deletion::Int = size(A, 1), dl = 1e-2) # in RMP experiments this was dl = 1e-2
     P = RMPS(A, b, σ)
-
     A, b, Σ, S, Q = P.A, P.b, P.Σ, P.S, P.Q
     α = P.α
     α .= Inf
+    for i in 1:maxiter # while norm of α is still changing
 
-    # while norm of α is still changin
-    γ = zero(α)
-    for i in 1:maxiter
-        γ = inv.(α)
-        isactive = @. !isinf(α) # active basis patterns
-
-        # update C, sparsity and quality factors
-        C⁻¹ = get_C_inverse(isactive, A, α, Σ)
-        update_SQ!(S, Q, A, b, C⁻¹)
-
-        if !rmp_acquisition!(α, S, Q) # if we did not add any atom, we're done
-            break
+        for _ in 1:maxiter_acquisition # acquisition stage
+            isactive = @. !isinf(α) # active basis patterns
+            C⁻¹ = get_C_inverse(isactive, A, α, Σ) # update C, sparsity and quality factors
+            P.C⁻¹ .= Matrix(C⁻¹)
+            println("in iter")
+            display(P.C⁻¹)
+            println(S)
+            update_SQ!(S, Q, A, b, C⁻¹)
+            println(S)
+            rmp_acquisition!(P) || break # if we did not add any atom, we're done
+            # println(findall(!=(Inf), α))
         end
 
-        # sometimes there are numerical instabilities on coherent dictionaries
-        # to ensure the algorithm doesn't get stuck in an infinite loop,
-        # we cap the number of inner iterations
-        for j in 1:maxinneriter
+        for j in 1:maxiter_deletion # update and deletion stage
             isactive = @. !isinf(α) # active basis patterns
             C⁻¹ = get_C_inverse(isactive, A, α, Σ)
             update_SQ!(S, Q, A, b, C⁻¹)
@@ -229,14 +251,13 @@ function rmps(A, b, σ; maxiter = size(A, 1), maxinneriter = 1size(A, 1), dl = 1
                 break
             end
         end
+
     end
     return P.x
 end
 
 function update_SQ!(S, Q, A, b, C⁻¹)
-    # S .= sparsity.((C⁻¹,), eachcol(A))
-    # Q .= quality.((C⁻¹,), (b,), eachcol(A))
-    @threads for k in 1:size(A, 2)
+    @threads for k in 1:size(A, 2) # parallelized
         Ak = @view A[:, k]
         S[k] = sparsity(C⁻¹, Ak)
         Q[k] = quality(C⁻¹, b, Ak)
@@ -255,16 +276,41 @@ function get_C_inverse(isactive, A, α, Σ)
         C⁻¹ = inverse(Σ)
     end
 end
-# acquires new atom
-function rmp_acquisition!(α::AbstractVector, S::AbstractVector, Q::AbstractVector)
+
+# update after rank one modification
+function update_C_inverse!(P::RMPS, i::Int, α::Real)
+    a = @view P.A[:, i]
+    v = P.C⁻¹ * a
+    @. P.C⁻¹ -= v * v' / (α + P.S[i]) # update
+end
+
+############################# acquisition ######################################
+function rmp_acquisition!(P::RMPS)
+    A, α, S, Q = P.A, P.α, P.S, P.Q
     δ = @. rmp_acquisition_value(α, S, Q)
     k = argmax(δ)
     if δ[k] > 0 # only add if it is beneficial
         sk, qk = sq(S[k], Q[k], α[k]) # updating α
         α[k] = optimal_α(sk, qk)
+        add_update!(P, k)
+        # update_C_inverse!(P, k, α[k])
         return true
     end
     return false
+end
+
+function add_update!(P::RMPS, i::Int)
+    a = P.A[:, i]
+    v = P.C⁻¹ * a
+    println("in update")
+    println(P.α[i])
+    # println(P.S)
+    P.S .-= (P.A * v).^2 ./ (P.α[i] + P.S[i])
+    # println(P.S)
+    display(P.C⁻¹)
+    update_C_inverse!(P, i, P.α[i])
+    display(P.C⁻¹)
+    return P.S, P.Q
 end
 
 function rmp_acquisition_value(α::Real, S::Real, Q::Real)
@@ -272,14 +318,14 @@ function rmp_acquisition_value(α::Real, S::Real, Q::Real)
     isactive = α < Inf
     isrelevant = s < q^2
     if !isactive && isrelevant
-        # δ_add(S, Q)
         q^2 / s
     else
         0.
     end
 end
 
-# updates atom
+
+################################ update ########################################
 function rmp_update!(α::AbstractVector, S::AbstractVector, Q::AbstractVector)
     δ = @. rmp_update_value(α, S, Q)
     k = argmax(δ)
@@ -303,6 +349,7 @@ function rmp_update_value(α::Real, S::Real, Q::Real)
     end
 end
 
+################################ deletion ######################################
 function rmp_deletion!(α::AbstractVector, S::AbstractVector, Q::AbstractVector)
     δ = @. rmp_deletion_value(α, S, Q)
     k = argmin(δ) # choosing minimum q/s value
@@ -326,7 +373,32 @@ function rmp_deletion_value(α::Real, S::Real, Q::Real)
     end
 end
 
-# # efficient update for S, Q if noise variance hasn't changed
-# # function update_sq()
-# #
-# # end
+
+# function update_SQ!(P::RMPS, i::Int)
+#     P.S .-= P.S -
+# end
+
+
+# acquires new atom
+# TODO: update S, Q accordingly
+# updates S, Q after adding i and setting variance to optimal value
+# function add_update!(P::RMPS, i::Int)
+#     # β = 1/P.Σ.λ # 1/σ^2
+#     α, S, Q, A = P.α, P.S, P.Q, P.A
+#     β = 1/1e-4
+#     Σ = inv(Diagonal(α) + β * A'A)
+#     s_ii = (α[i] .+ S[i]).^(-1)
+#     m_i = s_ii * Q[i]
+#     a = @view A[:, i]
+#     ei = a .- β * (A * (Σ * (A' * a)))
+#     # temp = Σ*A'*a
+#     mCi = β * (A' * ei)
+#     @. S -= s_ii * mCi^2
+#     @. Q -= m_i * mCi
+#     # for m in 1:length(S)
+#         # mCi = (β * dot(A[:, m], ei))
+#         # S[m] -= s_ii * mCi^2
+#         # Q[m] -= m_i * mCi
+#     # end
+#     return S, Q
+# end
