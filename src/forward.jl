@@ -7,7 +7,7 @@ struct ForwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
     r::V # residual
     QA::QT # temporary storage
     AiQR::FT # updatable QR factorization of Ai
-    δ::V # marginal decrease in objective value
+    δ²::V # decrease in SQUARED residual norm
     rescaling::V # OLS rescaling
 end
 const FR = ForwardRegression
@@ -26,8 +26,8 @@ function FR(A::AbstractMatrix, b::AbstractVector)
     AiQR = PUQR(reshape(A[:, 1], :, 1))
     remove_column!(AiQR)
     rescaling = colnorms(A)
-    δ = fill(-Inf, m)
-    FR(A, b, r, QA, AiQR, δ, rescaling)
+    δ² = fill(-Inf, m)
+    FR(A, b, r, QA, AiQR, δ², rescaling)
 end
 
 function fr(A::AbstractMatrix, b::AbstractVector;
@@ -58,9 +58,9 @@ function forward_step!(P::FR, x::SparseVector, max_ε::Real, min_δ::Real)
     residual!(P.r, P.A, x, P.b)
     normr = norm(P.r)
     normr > max_ε || return false
-    δ = forward_δ!(P, x)
-    max_δ, i = findmax(δ)
-    if min_δ < max_δ
+    δ² = forward_δ!(P, x)
+    max_δ², i = findmax(δ²)
+    if min_δ^2 < max_δ²
         a = @view P.A[:, i]
         addindex!(x, P.AiQR, a, i) # i is index into x.nzval, NOT into x
         ldiv!(x.nzval, P.AiQR, P.b)
@@ -73,11 +73,11 @@ end
 
 function forward_δ!(P::FR, x::AbstractVector)
     residual!(P, x)
-    mul!(P.δ, P.A', P.r) # δ = Ar = q
+    mul!(P.δ², P.A', P.r) # δ = Ar = q
     rescaling = ols_rescaling!(P, x)
-    @. P.δ = abs(P.δ) / rescaling
-    @. P.δ[x.nzind] = 0
-    return P.δ
+    @. P.δ² = P.δ²^2 / rescaling
+    @. P.δ²[x.nzind] = 0
+    return P.δ²
 end
 
 function acquisition_index!(P::FR, x::AbstractVector)
@@ -94,8 +94,8 @@ function update!(P::FR, x::AbstractVector)
 end
 
 ###############################################################################
-# calculates energetic norm of all passive atoms
-# √[ |x|^2 - x' * P_I * x] where P_I is the projection onto active column set of A
+# calculates squared energetic norm of all passive atoms
+# |x|^2 - x' * P_I * x where P_I is the projection onto active column set of A
 # Q is assumed to be part of QR-factorization of active set
 function ols_rescaling!(P::OLS, x::SparseVector)
     Q = P.AiQR isa UpdatableQR ? P.AiQR.Q1 : P.AiQR.uqr.Q1
@@ -108,5 +108,6 @@ function ols_rescaling!(P::OLS, x::SparseVector)
             @inbounds P.rescaling[j] -= QA[i,j]^2
         end
     end
-    @. P.rescaling = sqrt(max(P.rescaling, 0))
+    # @. P.rescaling = sqrt(max(P.rescaling, 0))
+    return P.rescaling
 end

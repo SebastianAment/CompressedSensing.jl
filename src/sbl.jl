@@ -155,10 +155,7 @@ function update!(P::FSBL, α::AbstractVector = P.α)
         sbl_deletion!(P, i)
     elseif active && relevant
         sbl_update!(P, i)
-    else
-        throw("we shouldn't be here")
-    end
-
+    end # else, no action required
     return α
 end
 

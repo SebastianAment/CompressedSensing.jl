@@ -7,7 +7,7 @@ struct BackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
     b::B # target
     r::V # residual
     AiQR::FT # updatable QR factorization of Ai
-    δ::V # residual norm difference
+    δ²::V # increase in SQUARED residual norm
 end
 const BR = BackwardRegression
 const BackwardGreedy = BackwardRegression
@@ -19,8 +19,8 @@ function BR(A::AbstractMatrix, b::AbstractVector)
     # AiQR = UpdatableQR(A)
     AiQR = PUQR(A)
     rescaling = colnorms(A)
-    δ = fill(-Inf, m)
-    return BR(A, b, r, AiQR, δ)
+    δ² = fill(-Inf, m)
+    return BR(A, b, r, AiQR, δ²)
 end
 
 # calculates a solution to a full column rank (not underdetermined)
@@ -53,10 +53,10 @@ function backward_step!(P::Union{FR, BR}, x::SparseVector, max_ε::Real, max_δ:
     nnz(x) > 0 || return false
     residual!(P.r, P.A, x, P.b)
     normr = norm(P.r)
-    δ = backward_δ!(P, x, normr)
-    min_δ, i = findmin(δ) # drop the atom that leads to the minimum increase of the residual norm
-    new_norm = sqrt(min_δ + normr^2) # since δ is the marginal increase in norm
-    if min_δ + normr < max_ε && min_δ < max_δ
+    δ² = backward_δ!(P, x, normr)
+    min_δ², i = findmin(δ²) # drop the atom that leads to the minimum increase of the residual norm
+    new_norm = sqrt(min_δ² + normr^2) # since min_δ is the squared marginal increase in norm
+    if new_norm < max_ε && min_δ² < max_δ^2
         _dropindex!(x, P.AiQR, i) # i is index into x.nzval, NOT into x
         ldiv!(x.nzval, P.AiQR, P.b)
         return true
@@ -74,7 +74,7 @@ end
 function backward_δ!(P::Union{FR, BR}, x::SparseVector, normr = norm(P.r))
     # reduce all variables to support of x
     A = @view P.A[:, x.nzind]
-    δ = @view P.δ[x.nzind]
+    δ² = @view P.δ²[x.nzind]
     n = length(x.nzind)
     # y = @view x.nzval[1:n-1] # temporary storage for coefficients of smaller problem
     y = similar(x.nzval, n-1)
@@ -85,10 +85,10 @@ function backward_δ!(P::Union{FR, BR}, x::SparseVector, normr = norm(P.r))
         ldiv!(y, P.AiQR, P.b)
         P.r .= P.b
         mul!(P.r, Ai, y, -1, 1)
-        δ[i] = norm(P.r)^2 - normr^2 # marginal squared norm increase
+        δ²[i] = norm(P.r)^2 - normr^2 # squared residual norm increase
         add_column!(P.AiQR, a, i)
     end
-    return δ
+    return δ²
 end
 ################################################################################
 # see "An Efficient Implementation of the Backward Greedy Algorithm for Sparse Signal Reconstruction"
@@ -101,7 +101,7 @@ struct FastBackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
     r::V # residual
     AA⁻¹::AAT # stores AA⁻¹ corresonding to active set in upper left block
     Ab::V # stores A' * b
-    δ::V # residual norm difference
+    δ²::V # increase in SQUARED residual norm
 end
 const FBR = FastBackwardRegression
 function FBR(A::AbstractMatrix, b::AbstractVector)
@@ -113,8 +113,8 @@ function FBR(A::AbstractMatrix, b::AbstractVector, r::AbstractVector, F::Factori
     n, m = size(A)
     AA = F.R \ Matrix(F.R' \ I(m))
     Ab = A'b
-    δ = zeros(m)
-    return FBR(A, b, r, AA, Ab, δ)
+    δ² = zeros(m)
+    return FBR(A, b, r, AA, Ab, δ²)
 end
 function FBR(A::AbstractMatrix, b::AbstractVector, r::AbstractVector, F::PUQR)
     n, m = size(F)
@@ -123,8 +123,8 @@ function FBR(A::AbstractMatrix, b::AbstractVector, r::AbstractVector, F::PUQR)
     ip = invperm(F.perm)
     AA = AA[ip, ip]
     Ab = A'b
-    δ = zeros(m)
-    return FBR(A, b, r, AA, Ab, δ)
+    δ² = zeros(m)
+    return FBR(A, b, r, AA, Ab, δ²)
 end
 # build FBR object from existing ForwardRegression object
 function FBR(P::FR)
@@ -149,10 +149,10 @@ end
 function backward_step!(P::FBR, x::SparseVector, max_ε::Real, max_δ::Real)
     nnz(x) > 0 || return false
     normr = norm(residual!(P.r, P.A, x, P.b))
-    δ = backward_δ!(P, x)
-    min_δ, i = findmin(δ) # drop the atom that leads to the minimum increase of the residual norm
-    new_norm = sqrt(min_δ + normr^2) # since δ is the marginal increase of squared norm
-    if new_norm < max_ε && min_δ < max_δ
+    δ² = backward_δ!(P, x)
+    min_δ², i = findmin(δ²) # drop the atom that leads to the minimum increase of the residual norm
+    new_norm = sqrt(min_δ² + normr^2) # since δ is the marginal increase of squared norm
+    if new_norm < max_ε && min_δ² < max_δ^2
         _dropindex!(x, P, i) # i is index into x.nzval, NOT into x
         _solve!(P, x)
         return true
@@ -173,9 +173,9 @@ end
 function backward_δ!(P::FBR, x::SparseVector)
     m = nnz(x)
     AA⁻¹ = @views P.AA⁻¹[1:m, 1:m]
-    δ = @view P.δ[1:m]
+    δ² = @view P.δ²[1:m]
     γ = @view AA⁻¹[diagind(AA⁻¹)]
-    @. δ = x.nzval^2 / γ # since x = AA⁻¹ * A' * P.b
+    @. δ² = x.nzval^2 / γ # since x = AA⁻¹ * A' * P.b
 end
 
 # drops the ith index of x and updates the matrices AA⁻¹, AA⁻¹A accordingly

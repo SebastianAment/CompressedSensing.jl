@@ -22,7 +22,7 @@ using LinearAlgebra
     @test xfr.nzind == x.nzind # support recovery
     @test isapprox(xfr.nzval, x.nzval, atol = 2δ)
 
-    xfr = foba(A, y,)
+    xfr = foba(A, y)
 end
 
 end # TestForward
