@@ -1,5 +1,6 @@
 # backward algorithms
 ######################### Backward Regression Algorithm ########################
+# naive / slow implmentation, see below for more efficient implementation
 struct BackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
                         V<:AbstractVector{T}, FT} <: AbstractMatchingPursuit{T}
     A::AT # matrix
@@ -92,6 +93,7 @@ end
 ################################################################################
 # see "An Efficient Implementation of the Backward Greedy Algorithm for Sparse Signal Reconstruction"
 # WARNING: potentially more susceptible to ill-conditioned systems
+# IDEA: could implement corresponding forward regression which keeps track of AA⁻¹ instead of QR
 struct FastBackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
             V<:AbstractVector{T}, AAT<:AbstractMatrix{T}} <: AbstractMatchingPursuit{T}
     A::AT # matrix

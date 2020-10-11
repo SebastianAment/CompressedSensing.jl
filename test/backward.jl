@@ -7,7 +7,7 @@ using LinearAlgebra
 using SparseArrays
 
 # set up data
-n, k = 128, 16
+n, k = 64, 16
 δ = 1e-2
 A, x, b = sparse_data(n = n, m = n, k = k, min_x = √2δ) # needs to be determined
 ε = randn(n)

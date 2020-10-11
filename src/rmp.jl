@@ -29,6 +29,7 @@ function rmp(A::AbstractMatrix, b::AbstractVector,
     for _ in 1:n
         forward_step!(P, x, 0, 0) || break
     end
+    P = FastBackwardRegression(P)
     for _ in nnz(x):-1:k+1
         backward_step!(P, x, Inf, Inf) || break
     end
@@ -43,7 +44,8 @@ function foba(A::AbstractMatrix, b::AbstractVector, δ::Real = 1e-6, x = spzeros
     for _ in 1:n
         forward_step!(P, x, 0, δ) || break
         max_δ = maximum(P.δ) # this is the change in residual norm of last forward step
-        while backward_step!(P, x, Inf, max_δ/2) end # FoBa only takes backward steps if they increase the norm by half of decrease of forward algorithm
+        PB = FastBackwardRegression(P)
+        while backward_step!(PB, x, Inf, max_δ/2) end # FoBa only takes backward steps if they increase the norm by half of decrease of forward algorithm
     end
     return x
 end
