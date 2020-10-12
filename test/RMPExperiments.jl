@@ -14,7 +14,7 @@ plotlyjs()
 # pursuit algorithms
 using CompressedSensing: mp, omp, oomp,
                         ompr, sp, lmp,
-                        rmps, rmp, greedy_sbl,
+                        rmps, rmp, greedy_sbl, sbl,
                         bp, bp_candes, bp_ard,
                         bpd, bpd_candes, bpd_ard
 

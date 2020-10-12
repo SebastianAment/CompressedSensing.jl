@@ -1,6 +1,6 @@
 module TestBackward
 using CompressedSensing
-using CompressedSensing: sparse_data, br, fbr, lace, FBR, BR, backward_step!
+using CompressedSensing: sparse_data, br, fbr, lace, FBR, BR, backward_step!, perturb
 
 using Test
 using LinearAlgebra
@@ -8,11 +8,9 @@ using SparseArrays
 
 # set up data
 n, k = 64, 16
+A, x, b = sparse_data(n = n, m = n, k = k)
 δ = 1e-2
-A, x, b = sparse_data(n = n, m = n, k = k, min_x = √2δ) # needs to be determined
-ε = randn(n)
-ε .*= δ/2norm(ε)
-y = b + ε
+y = perturb(b, δ/2)
 
 @testset "backward regression" begin
     xbr = br(A, y, sparsity = k) # k-sparse approximation
@@ -40,15 +38,15 @@ end
     xbr = fbr(A, y, max_increase = δ) # approximation with no marginal norm increase above δ
     @test x.nzind == xbr.nzind
 end
-#
-using BenchmarkTools
-@btime br($A, $y, sparsity = $k)
-@btime fbr($A, $y, sparsity = $k)
 
-function residual_magnitude(n::Int)
-    A = randn(n, n-1)
-    a = randn(n)
-    norm(a-A\a)
-end
+# using BenchmarkTools
+# @btime br($A, $y, sparsity = $k)
+# @btime fbr($A, $y, sparsity = $k)
+
+# function residual_magnitude(n::Int)
+#     A = randn(n, n-1)
+#     a = randn(n)
+#     norm(a-A\a)
+# end
 
 end # TestBackward

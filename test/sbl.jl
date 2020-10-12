@@ -1,16 +1,13 @@
 module TestSBL
 using Test
 using LinearAlgebra
-using CompressedSensing: sparse_data, sbl, SBL, fsbl, rmps, update!, rmp, foba
+using CompressedSensing: sparse_data, sbl, SBL, fsbl, rmps, update!, rmp, foba, perturb
 using SparseArrays
 
 n, m, k = 64, 128, 6
-σ = 1e-2
-Σ = σ^2*I(n)
 A, x, b = sparse_data(n = n, m = m, k = k)
-ε = randn(n)
-ε ./= norm(ε)
-y = @. b + σ/2*ε
+σ = 1e-2
+y = perturb(b, σ/2)
 
 @testset "Sparse Bayesian Learning" begin
     xsbl = sbl(A, y, σ)

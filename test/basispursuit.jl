@@ -2,13 +2,16 @@ module TestBasisPursuit
 using Test
 using LinearAlgebra
 using SparseArrays
-using CompressedSensing: bp, bp_candes, bp_ard, bpd, bpd_candes, bpd_ard, sparse_data
+using CompressedSensing: bp, bp_candes, bp_ard, bpd, bpd_candes, bpd_ard, sparse_data, perturb
+
+n, m = 32, 64
+k = 6
+A, x, b = sparse_data(n = n, m = m, k = k, rescaled = true)
+δ = 1e-2
+y = perturb(b, δ/2)
 
 @testset "Basis Pursuit" begin
     # equality constrained l1 minimization
-    n, m = 32, 64
-    k = 6
-    A, x, b = sparse_data(n = n, m = m, k = k, rescaled = true)
     xl = bp(A, b)
     @test xl.nzind == x.nzind
 
@@ -20,45 +23,27 @@ using CompressedSensing: bp, bp_candes, bp_ard, bpd, bpd_candes, bpd_ard, sparse
 end
 
 @testset "Basis Pursuit Denoising" begin
-    # equality constrained l1 minimization
-    n, m = 32, 64
-    k = 6
-    δ = 1e-2
-    min_x = 2e-2 # above noise-level to make bp work
-    A, x, b = sparse_data(n = n, m = m, k = k, min_x = min_x, rescaled = true)
-    e = randn(n)
-    e *= δ/2norm(e) # create δ perturbation from b
-    b += e
-
-    xl = bpd(A, b, δ) # still has spurious coefficients above an order of magnitudes below perturbation level
-    droptol!(xl, 1e-2) # eh
+    xl = bpd(A, y, δ)
+    droptol!(xl, 1e-2) # sometimes has spurious coefficients above perturbation level
     @test xl.nzind == x.nzind
 
-    xc = bpd_candes(A, b, δ, maxiter = 3)
-    # println("candes")
+    xc = bpd_candes(A, y, δ, maxiter = 3)
     droptol!(xc, 1e-6)
     @test xc.nzind == x.nzind
 
-    xard = bpd_ard(A, b, δ, maxiter = 16)
-    # println("ard")
+    xard = bpd_ard(A, y, δ, maxiter = 16)
     droptol!(xard, 1e-6)
     @test xard.nzind == x.nzind
 end
 
 using CompressedSensing: ista, fista
 @testset "ISTA" begin
-    # equality constrained l1 minimization
-    n, m = 32, 64
-    k = 6
-    δ = 1e-1
-    min_x = 2e-2 # above noise-level to make bp work
-    A, x, b = sparse_data(n = n, m = m, k = k, min_x = min_x, rescaled = true)
-
-    λ = .1
-    xista = ista(A, b, λ, maxiter = 512)
-    droptol!(xista, δ)
+    λ = δ/10
+    xista = ista(A, y, λ, maxiter = 1024)
+    # droptol!(xista, δ)
     # @test xista.nzind == x.nzind
-    @test xista.nzind ⊆ x.nzind
+    # @test xista.nzind ⊆ x.nzind
+    @test norm(A*xista - y) < δ
     # TODO: FISTA
 end
 

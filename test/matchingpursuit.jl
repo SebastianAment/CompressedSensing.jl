@@ -2,20 +2,19 @@ module TestMatchingPursuit
 using Test
 using LinearAlgebra
 using CompressedSensing: MP, mp, OMP, omp, SP, sp, rmp, sparse_data,
-                        ols, ompr, lmp, foba
+                        ols, ompr, lmp, foba, perturb
 using SparseArrays
 # TODO: pool tests of similar algorithms, e.g.: omp, ols, ompr
 @testset "Matching Pursuits" begin
     n, m, k = 32, 64, 3
     A, x, b = sparse_data(n = n, m = m, k = k)
-    σ = 1e-2 # slightly noisy
-    ε = randn(n)
-    ε .*= σ/2norm(ε)
+    δ = 1e-2 # slightly noisy
+    y = perturb(b, δ/2)
 
     @testset "Matching Pursuit" begin
         xmp = mp(A, b, 3k) # giving more iterations to optimize
-        @test isapprox(A*xmp, b, atol = 2σ)
-        @test isapprox(xmp.nzval, x.nzval, atol = 2σ)
+        @test isapprox(A*xmp, b, atol = 2δ)
+        @test isapprox(xmp.nzval, x.nzval, atol = 2δ)
     end
 
     @testset "Orthogonal Matching Pursuit" begin
@@ -24,21 +23,22 @@ using SparseArrays
         @test xomp.nzind == x.nzind
         @test xomp.nzval ≈ x.nzval
         # noisy
-        xomp = omp(A, b + ε, k)
+        xomp = omp(A, y, k)
         @test xomp.nzind == x.nzind
-        @test isapprox(xomp.nzval, x.nzval, atol = 2σ)
+        @test isapprox(xomp.nzval, x.nzval, atol = 2δ)
     end
 
     @testset "OMP with replacement" begin
         # noiseless
-        δ = 1e-6
-        xompr = ompr(A, b, k, δ)
+        # δ = 1e-6
+        xompr = ompr(A, b, k, 1e-6)
         @test xompr.nzind == x.nzind
         @test xompr.nzval ≈ x.nzval
+
         # slightly noisy
-        xomp = ompr(A, b + ε, k)
+        xomp = ompr(A, y, k)
         @test xomp.nzind == x.nzind
-        @test isapprox(xomp.nzval, x.nzval, atol = 5σ)
+        @test isapprox(xomp.nzval, x.nzval, atol = 5δ)
     end
 
     @testset "Subspace Pursuit" begin
@@ -47,13 +47,12 @@ using SparseArrays
         @test xssp.nzind == x.nzind
         @test isapprox(xssp.nzval, x.nzval)
         # noiseless
-        xssp = sp(A, b + ε, k, 1e-2)
+        xssp = sp(A, y, k, δ)
         @test xssp.nzind == x.nzind
-        @test isapprox(xssp.nzval, x.nzval, atol = 5σ)
+        @test isapprox(xssp.nzval, x.nzval, atol = 5δ)
     end
 
     @testset "Relevance Matching Pursuit" begin
-        δ = 1e-6
         xrmp = rmp(A, b, k)
         # noiseless
         @test xrmp.nzind == x.nzind
@@ -65,13 +64,12 @@ using SparseArrays
         @test xlmp.nzval ≈ x.nzval
 
         # noisy
-        xrmp = rmp(A, b + ε, 1e-2)
+        xrmp = rmp(A, y, δ)
         @test xrmp.nzind == x.nzind
-        @test isapprox(xrmp.nzval, x.nzval, atol = 5σ)
+        @test isapprox(xrmp.nzval, x.nzval, atol = 5δ)
     end
 
     @testset "FoBa" begin
-        δ = 1e-6
         xfoba = foba(A, b, δ)
         # noiseless
         @test xfoba.nzind == x.nzind

@@ -1,21 +1,58 @@
 # helper
 colnorms(A::AbstractMatrix) = [norm(a) for a in eachcol(A)]
 
-########################### synthetic data generator ###########################
-function sparse_data(;n = 32, m = 64, k = 3, min_x = 0., rescaled = true)
+function samesupport(x::AbstractVector, y::AbstractVector)
+    samesupport(sparse(x), sparse(y))
+end
+function samesupport(x::SparseVector, y::SparseVector)
+    sort!(x.nzind) == sort!(y.nzind)
+end
+
+########################## synthetic data generators ###########################
+# creates random k-sparse vector with ±1 as entries, or gaussian depending on flag
+function sparse_vector(m::Int, k::Int, gaussian::Bool = false)
+    x = spzeros(m)
+    ind = sort!(sample(1:m, k, replace = false))
+    x[ind] .= gaussian ? randn(k) : rand((-1, 1), k)
+    return x
+end
+
+function sparse_data(;n = 32, m = 64, k = 3, rescaled = true)
     A = randn(n, m)
     if rescaled
         ε = 1e-6
         A .-= ε*mean(A, dims = 1)
         A ./= sqrt.(sum(abs2, A, dims = 1))
     end
-    x = spzeros(m)
-    ind = sort!(sample(1:m, k, replace = false))
-    # @. x[ind] = $rand((-1,1)) * max(abs(randn()), min_x)
-	x[ind] .= rand((-1, 1), k) 
+	x = sparse_vector(m, k)
+    b = A*x
+    return A, x, b
+end
+const gaussian_data = sparse_data
+sparse_data(n, m, k) = sparse_data(n = n, m = m, k = k)
+function correlated_data(n, m, k; normalized = true)
+    U = randn(n, n)
+    V = randn(n, m)
+    S = Diagonal([1/i^2 for i in 1:n])
+    A = U*S*V
+    # normalize
+    if normalized
+        A ./= sqrt.(sum(abs2, A, dims = 1))
+    end
+    x = sparse_vector(m, k)
     b = A*x
     A, x, b
 end
+const coherent_data = correlated_data
+
+# random perturbation of b with norm δ
+function perturb!(b::AbstractVector, δ::Real)
+    e = randn(size(b))
+    e *= δ/norm(e)
+    b .+= e # perturb
+end
+perturb(b, δ) = perturb!(copy(b), δ)
+
 
 ########################### dictionary preconditioners #########################
 function normalize!(A::AbstractVecOrMat)
