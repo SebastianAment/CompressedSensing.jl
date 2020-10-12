@@ -45,7 +45,7 @@ function fr(A::AbstractMatrix, b::AbstractVector, max_ε::Real, min_δ::Real,
             k::Int = size(A, 1), x = spzeros(size(A, 2)))
     P = FR(A, b)
     for _ in 1:k
-        forward_step!(P, x, max_ε, min_δ)
+        forward_step!(P, x, max_ε, min_δ) || break
     end
     return x
 end

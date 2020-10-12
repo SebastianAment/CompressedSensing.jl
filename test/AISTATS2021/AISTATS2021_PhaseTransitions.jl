@@ -16,10 +16,10 @@ algorithms = [(A, b) -> omp(A, b, δ),
 algnames = ["OMP", "FR", "RMP", "RMP_σ"]
 
 m = 128
-nexp = 128
-nsample = 64
+nexp = 256
+nsample = 128
 subsampling_fractions = range(.1, 1., length = nsample)
-nsparse = 64
+nsparse = 128
 sparsity_fractions = range(0., .7, length = nsparse) # sparsity coefficients
 nalg = length(algorithms)
 δ = 1e-2

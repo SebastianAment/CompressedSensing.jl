@@ -12,11 +12,10 @@ algorithms = [(A, b) -> omp(A, b, δ),
             ]
 
 algnames = ["OMP", "FR", "RMP", "RMP_σ", "FSBL", "BP", "BP ARD"]
-# algnames = ["OMP", "FR", "RMP", "RMP_σ"]
 
 ############### recovery sweep for fixed undersampling ratio ###################
 m = 128
-nexp = 128
+nexp = 1024
 subsampling_fractions = [.5]
 n = m÷2
 sparsity_fractions = collect(1:n÷2) ./ n # sparsity coefficients

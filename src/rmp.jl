@@ -38,7 +38,7 @@ end
 
 # see Adaptive Forward-Backward Greedy Algorithm for Sparse Learning with Linear Models
 # terminates if algorithm can't decrease residual norm by more than δ
-function foba(A::AbstractMatrix, b::AbstractVector, δ::Real = 1e-6, x = spzeros(size(A, 2)))
+function foba(A::AbstractMatrix, b::AbstractVector, δ::Real, x = spzeros(size(A, 2)))
     n = size(A, 1)
     P = StepwiseRegression(A, b)
     for i in 1:n
