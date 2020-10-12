@@ -26,7 +26,7 @@ doplot = false
 if doplot
     plot(P)
 end
-
+droptol = 0
 doh5 = true
 if doh5
     filename = "AISTATS2021_PhaseTransitions"

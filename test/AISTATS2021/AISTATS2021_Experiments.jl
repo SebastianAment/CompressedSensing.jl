@@ -112,15 +112,20 @@ function run!(P::PhaseTransitionExperiment)
 end
 
 function Plots.plot(P::PhaseTransitionExperiment)
-    mean_success = mean(P.success, dims = 2) # average over experimental runs
-    nalg = length(P.algorithms)
-    nsample = length(P.subsampling_fractions)
+    _plot(P.subsampling_fractions, P.sparsity_fractions, P.success)
+end
+
+function _plot(subsampling_fractions::AbstractVector, sparsity_fractions::AbstractVector,
+                success::AbstractArray)
+    mean_success = mean(success, dims = 2) # average over experimental runs
+    nsample = length(subsampling_fractions)
+    nalg = size(success, 1)
     for i in 1:nalg
         if nsample > 1
-            heatmap(P.subsampling_fractions, P.sparsity_fractions, mean_success[i, 1, :, :]',
+            heatmap(subsampling_fractions, sparsity_fractions, mean_success[i, 1, :, :]',
             xlabel = "n/m", ylabel = "k/n", label = "name")
         elseif nsample == 1
-            plot(P.sparsity_fractions, vec(mean_success[i, 1, 1, :]),
+            plot(sparsity_fractions, vec(mean_success[i, 1, 1, :]),
             xlabel = "k/m", ylabel = "probability of success", label = "name")
         end
         gui()
