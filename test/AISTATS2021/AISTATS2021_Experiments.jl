@@ -98,10 +98,12 @@ function run!(P::PhaseTransitionExperiment)
     nsample, nsparse = length(P.subsampling_fractions), length(P.sparsity_fractions)
     for (i, δ) in enumerate(P.subsampling_fractions)
         n = round(Int, δ * P.m)
-        for j in eachindex(P.sparsity_fractions)
+        n = max(1, n)
+        @threads for j in eachindex(P.sparsity_fractions)
             println(i, j)
             ρ = P.sparsity_fractions[j]
-            k = max(1, round(Int, ρ * n))
+            k = round(Int, ρ * n)
+            k = max(1, k)
             E = RecoveryExperiment(n, P.m, k, P.nexp,
                                     P.algorithms, P.data_generator,
                                     @view P.success[:, :, i, j])

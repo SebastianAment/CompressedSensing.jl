@@ -11,6 +11,7 @@ end
 ########################## synthetic data generators ###########################
 # creates random k-sparse vector with ±1 as entries, or gaussian depending on flag
 function sparse_vector(m::Int, k::Int, gaussian::Bool = false)
+    m ≥ k || throw("m = $m < $k = k")
     x = spzeros(m)
     ind = sort!(sample(1:m, k, replace = false))
     x[ind] .= gaussian ? randn(k) : rand((-1, 1), k)

@@ -1,7 +1,7 @@
 include("AISTATS2021_Experiments.jl")
 
 ################################################################################
-# droptol = 1e-3 # coefficients which can be dropped from solution of bp-based methods
+droptol = 1e-3 # coefficients which can be dropped from solution of bp-based methods
 algorithms = [(A, b) -> omp(A, b, δ),
             (A, b) -> fr(A, b, 0, δ),
             (A, b) -> rmp(A, b, δ),
@@ -15,18 +15,25 @@ algorithms = [(A, b) -> omp(A, b, δ),
 # algnames = ["OMP", "FR", "RMP", "RMP_σ", "FSBL", "BP", "BP ARD"]
 algnames = ["OMP", "FR", "RMP", "RMP_σ"]
 
-
+m = 128
+nexp = 128
+nsample = 64
+subsampling_fractions = range(.1, 1., length = nsample)
+nsparse = 64
+sparsity_fractions = range(0., .7, length = nsparse) # sparsity coefficients
+nalg = length(algorithms)
 δ = 1e-2
 data_generator(n, m, k) = perturbed_gaussian_data(n, m, k, δ/2)
-P = PhaseTransitionExperiment(m = 64, nexp = 1, nsample = 8, nsparse = 8,
-                        algorithms = algorithms, data_generator = data_generator)
+success = zeros(nalg, nexp, nsample, nsparse)
+P = PhaseTransitionExperiment(m, nexp, subsampling_fractions, sparsity_fractions,
+            algorithms, data_generator, success)
 success = run!(P)
 
 doplot = false
 if doplot
     plot(P)
 end
-droptol = 0
+
 doh5 = true
 if doh5
     filename = "AISTATS2021_PhaseTransitions"
