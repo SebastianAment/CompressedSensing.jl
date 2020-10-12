@@ -6,7 +6,7 @@ algorithms = [(A, b) -> omp(A, b, δ),
             (A, b) -> rmp(A, b, δ),
             (A, b) -> foba(A, b, δ),
             (A, b) -> rmps(A, b, δ),
-            (A, b) -> fsbl(A, b, δ)
+            (A, b) -> fsbl(A, b, δ),
             (A, y) -> droptol!(bpd(A, y, δ), droptol),
             (A, y) -> droptol!(bpd_ard(A, y, δ), droptol)
             ]
@@ -28,6 +28,7 @@ data_generator(n, m, k) = perturbed_gaussian_data(n, m, k, δ/2)
 success = zeros(nalg, nexp, 1, length(sparsity_fractions))
 P = PhaseTransitionExperiment(m, nexp, subsampling_fractions, sparsity_fractions,
             algorithms, data_generator, success)
+println("running perturbed gaussian")
 run!(P)
 
 doh5 = true
@@ -42,6 +43,7 @@ data_generator(n, m, k) = perturbed_coherent_data(n, m, k, δ/2)
 success = zeros(nalg, nexp, 1, length(sparsity_fractions))
 P = PhaseTransitionExperiment(m, nexp, subsampling_fractions, sparsity_fractions,
             algorithms, data_generator, success)
+println("running perturbed coherent")
 run!(P)
 
 if doh5
@@ -54,6 +56,7 @@ data_generator(n, m, k) = gaussian_data(n, m, k)
 success = zeros(nalg, nexp, 1, length(sparsity_fractions))
 P = PhaseTransitionExperiment(m, nexp, subsampling_fractions, sparsity_fractions,
             algorithms, data_generator, success)
+println("running noiseless gaussian")
 run!(P)
 
 if doh5
@@ -66,6 +69,7 @@ data_generator(n, m, k) = coherent_data(n, m, k)
 success = zeros(nalg, nexp, 1, length(sparsity_fractions))
 P = PhaseTransitionExperiment(m, nexp, subsampling_fractions, sparsity_fractions,
             algorithms, data_generator, success)
+println("running noiseless coherent")
 run!(P)
 
 if doh5
