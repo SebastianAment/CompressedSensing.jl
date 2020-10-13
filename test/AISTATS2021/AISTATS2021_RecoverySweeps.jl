@@ -20,23 +20,24 @@ subsampling_fractions = [.5]
 n = m÷2
 sparsity_fractions = collect(1:n÷2) ./ n # sparsity coefficients
 nalg = length(algorithms)
-
-################################################################################
 δ = 1e-2
-data_generator(n, m, k) = perturbed_gaussian_data(n, m, k, δ/2)
-success = zeros(nalg, nexp, 1, length(sparsity_fractions))
-P = PhaseTransitionExperiment(m, nexp, subsampling_fractions, sparsity_fractions,
-            algorithms, data_generator, success)
-println("running perturbed gaussian")
-run!(P)
-
-doh5 = true
-if doh5
-    filename = "AISTATS2021_RecoverySweeps_NoisyGaussian"
-    saveh5(P, algnames, δ, droptol, filename)
-end
 
 ################################################################################
+# data_generator(n, m, k) = perturbed_gaussian_data(n, m, k, δ/2)
+# success = zeros(nalg, nexp, 1, length(sparsity_fractions))
+# P = PhaseTransitionExperiment(m, nexp, subsampling_fractions, sparsity_fractions,
+#             algorithms, data_generator, success)
+# println("running perturbed gaussian")
+# run!(P)
+#
+# doh5 = true
+# if doh5
+#     filename = "AISTATS2021_RecoverySweeps_NoisyGaussian"
+#     saveh5(P, algnames, δ, droptol, filename)
+# end
+
+################################################################################
+sparsity_fractions = collect(1:n÷4) ./ n # sparsity coefficients
 δ = 1e-2
 data_generator(n, m, k) = perturbed_coherent_data(n, m, k, δ/2)
 success = zeros(nalg, nexp, 1, length(sparsity_fractions))
@@ -51,19 +52,6 @@ if doh5
 end
 
 ################################################################################
-data_generator(n, m, k) = gaussian_data(n, m, k)
-success = zeros(nalg, nexp, 1, length(sparsity_fractions))
-P = PhaseTransitionExperiment(m, nexp, subsampling_fractions, sparsity_fractions,
-            algorithms, data_generator, success)
-println("running noiseless gaussian")
-run!(P)
-
-if doh5
-    filename = "AISTATS2021_RecoverySweeps_NoiselessGaussian"
-    saveh5(P, algnames, δ, droptol, filename)
-end
-
-################################################################################
 data_generator(n, m, k) = coherent_data(n, m, k)
 success = zeros(nalg, nexp, 1, length(sparsity_fractions))
 P = PhaseTransitionExperiment(m, nexp, subsampling_fractions, sparsity_fractions,
@@ -73,5 +61,19 @@ run!(P)
 
 if doh5
     filename = "AISTATS2021_RecoverySweeps_NoiselessCoherent"
+    saveh5(P, algnames, δ, droptol, filename)
+end
+
+################################################################################
+data_generator(n, m, k) = gaussian_data(n, m, k)
+sparsity_fractions = collect(1:n÷2) ./ n # sparsity coefficients
+success = zeros(nalg, nexp, 1, length(sparsity_fractions))
+P = PhaseTransitionExperiment(m, nexp, subsampling_fractions, sparsity_fractions,
+            algorithms, data_generator, success)
+println("running noiseless gaussian")
+run!(P)
+
+if doh5
+    filename = "AISTATS2021_RecoverySweeps_NoiselessGaussian"
     saveh5(P, algnames, δ, droptol, filename)
 end

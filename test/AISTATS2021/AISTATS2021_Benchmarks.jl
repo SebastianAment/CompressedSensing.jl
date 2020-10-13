@@ -49,9 +49,9 @@ algorithms = [(A, b) -> omp(A, b, δ),
             (A, y) -> droptol!(bpd(A, y, δ), droptol),
             (A, y) -> droptol!(bpd_ard(A, y, δ), droptol)
             ]
-algnames = ["OMP", "FR", "RMP", "RMP_σ", "FSBL", "BP", "BP ARD"]
+algnames = ["OMP", "FR", "RMP", "FoBa", "RMP_σ", "FSBL", "BP", "BP ARD"]
 
-m = @. 256 * 2^(0:4)
+m = @. 256 * 2^(0:2)
 E = BenchmarkExperiment(m, algorithms, algnames)
 run!(E)
 saveh5(E)
