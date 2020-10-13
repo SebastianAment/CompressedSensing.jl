@@ -358,17 +358,20 @@ end
 # maxiter_acquisition is the maximum number of iterations per aquisition stage
 # maxiter_deletion is the maximum number of iterations per deletion stage
 # min_increase is the minimum increase in marginal likelihood, below which the algorithm terminates
-function rmps(A, b, σ; maxiter::Int = 1,
+function rmps(A, b, σ; maxiter::Int = size(A, 1),
                     maxiter_acquisition::Int = size(A, 1),
                     maxiter_deletion::Int = size(A, 1), min_increase = 1e-6) # in RMP experiments this was min_increase = 1e-2
     P = RMPS(A, b, σ)
     A, b, Σ, S, Q = P.A, P.b, P.Σ, P.S, P.Q
     α = P.α
     α .= Inf
-    for i in 1:maxiter # while norm of α is still changing
+    old_α = copy(α)
+    for i in 1:maxiter
         for _ in 1:maxiter_acquisition # acquisition stage
             rmp_acquisition!(P) || break # if we did not add any atom, we're done
         end
+        old_α != α || break # while norm of α is still changing
+        old_α .= α
         for j in 1:maxiter_deletion # update and deletion stage
             if rmp_deletion!(P)
                 continue
@@ -376,6 +379,8 @@ function rmps(A, b, σ; maxiter::Int = 1,
                 break
             end
         end
+        old_α != α || break # while norm of α is still changing
+        old_α .= α
     end
     return P.x
 end

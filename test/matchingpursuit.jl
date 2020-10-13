@@ -67,6 +67,12 @@ using SparseArrays
         xrmp = rmp(A, y, δ)
         @test xrmp.nzind == x.nzind
         @test isapprox(xrmp.nzval, x.nzval, atol = 5δ)
+
+        # multiple outer loop iterations
+        xrmp = rmp(A, y, δ, 3)
+        @test xrmp.nzind == x.nzind
+        @test isapprox(xrmp.nzval, x.nzval, atol = 5δ)
+
     end
 
     @testset "FoBa" begin

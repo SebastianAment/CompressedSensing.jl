@@ -36,7 +36,7 @@ end
 bench = false
 using BenchmarkTools
 if bench
-    # @btime sbl($A, $b, $σ)
+    @btime sbl($A, $b, $σ)
     @btime rmps($A, $b, $σ)
     @btime fsbl($A, $b, $σ)
     @btime rmp($A, $y, $σ)

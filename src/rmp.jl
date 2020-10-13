@@ -7,13 +7,37 @@
 function rmp(A::AbstractMatrix, b::AbstractVector,
             δ::Real, x = spzeros(size(A, 2)))
     n = size(A, 1)
-    P = StepwiseRegression(A, b)
+    P = StepwiseRegression(A, b, x.nzind)
     for _ in 1:n
         forward_step!(P, x, 0, δ) || break # breaks if no change occured
     end
     P = FastBackwardRegression(P)
     for _ in nnz(x):-1:1
         backward_step!(P, x, Inf, δ) || break # breaks if no change occured
+    end
+    return x
+end
+
+# rmp with outer iterations
+function rmp(A::AbstractMatrix, b::AbstractVector, δ::Real,
+                                    maxiter::Int, x = spzeros(size(A, 2)))
+    n = size(A, 1)
+    xt = copy(x) # to keep track of changes in x
+    for i in 1:maxiter
+        # foward stage
+        P = StepwiseRegression(A, b, x.nzind)
+        for _ in 1:n
+            forward_step!(P, x, 0, δ) || break # breaks if no change occured
+        end
+        !(xt ≈ x) || break # break outer loop if x is not changing anymore
+        xt .= x
+        # backward stage
+        P = FastBackwardRegression(P)
+        for _ in nnz(x):-1:1
+            backward_step!(P, x, Inf, δ) || break # breaks if no change occured
+        end
+        !(xt ≈ x) || break # break outer loop if x is not changing anymore
+        xt .= x
     end
     return x
 end

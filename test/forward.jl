@@ -1,6 +1,6 @@
 module TestForward
 using CompressedSensing
-using CompressedSensing: sparse_data, fr, foba, perturb
+using CompressedSensing: sparse_data, fr, foba, perturb, FR
 
 using Test
 using LinearAlgebra
@@ -20,6 +20,12 @@ y = perturb(b, δ)
     @test xfr.nzind == x.nzind # support recovery
     @test isapprox(xfr.nzval, x.nzval, atol = 2δ)
 
+    # test initialization with support set
+    nzind = [1, 2, 3]
+    P = FR(A, y, nzind)
+    xi = P.AiQR \ y
+    @test length(xi) == 3
+    @test xi ≈ P.A[:, nzind] \ y
 end
 
 @testset "FoBa" begin

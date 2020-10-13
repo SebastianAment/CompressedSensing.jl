@@ -17,14 +17,26 @@ const OOMP = OLS # a.k.a. Optimal OMP
 const ORMP = OLS # a.k.a order-recursive matching pursuit
 const StepwiseRegression = FR
 
-function FR(A::AbstractMatrix, b::AbstractVector)
+# function FR(A::AbstractMatrix, b::AbstractVector)
+#     n, m = size(A)
+#     T = eltype(A)
+#     r, Ar = zeros(T, n), zeros(T, m)
+#     QA = zeros(T, (n, m))
+#     # AiQR = UpdatableQR(reshape(A[:, 1], :, 1))
+#     AiQR = PUQR(reshape(A[:, 1], :, 1))
+#     remove_column!(AiQR)
+#     rescaling = colnorms(A)
+#     δ² = fill(-Inf, m)
+#     FR(A, b, r, QA, AiQR, δ², rescaling)
+# end
+
+FR(A::AbstractMatrix, b::AbstractVector, x::SparseVector) = FR(A, b, x.nzind)
+function FR(A::AbstractMatrix, b::AbstractVector, nzind::AbstractVector{Int} = ones(Int, 0))
     n, m = size(A)
     T = eltype(A)
     r, Ar = zeros(T, n), zeros(T, m)
     QA = zeros(T, (n, m))
-    # AiQR = UpdatableQR(reshape(A[:, 1], :, 1))
-    AiQR = PUQR(reshape(A[:, 1], :, 1))
-    remove_column!(AiQR)
+    AiQR = PUQR(A[:, nzind])
     rescaling = colnorms(A)
     δ² = fill(-Inf, m)
     FR(A, b, r, QA, AiQR, δ², rescaling)

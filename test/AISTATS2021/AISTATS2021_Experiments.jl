@@ -134,7 +134,6 @@ function _plot(subsampling_fractions::AbstractVector, sparsity_fractions::Abstra
     end
 end
 
-
 # function RecoveryExperiment(noisy::Bool, coherent::Bool)
 #     n, m = 64, 128
 #     nexp = 128

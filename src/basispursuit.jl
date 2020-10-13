@@ -46,7 +46,7 @@ const bp_candes = candes_reweighting
 
 # using LinearAlgebraExtensions: LowRank
 # TODO: stop when w has converged, instead of maxiter
-function ard_weights!(w, A, x, ε, iter = 8)
+function ard_weights!(w, A, x, ε::Real, iter::Int = 8)
     if any(==(0), w)
         error("weights cannot be zero")
     end
@@ -66,8 +66,8 @@ end
 
 ard_function(A::AbstractMatrix, ε::Real) = (w, x) -> ard_weights!(w, A, x, ε)
 
-function ard_reweighting(A::AbstractMatrix, b::AbstractVector,
-                                            ε = 1e-2; maxiter = 8)
+function ard_reweighting(A::AbstractMatrix, b::AbstractVector, ε::Real = 1e-2;
+                                                            maxiter::Int = 8)
     basispursuit_reweighting(A, b, ard_function(A, ε), maxiter = maxiter)
 end
 const bp_ard = ard_reweighting
@@ -114,11 +114,11 @@ function bpd_reweighting(A::AbstractMatrix, b::AbstractVector, δ::Real,
 end
 
 # δ is l2 noise threshold, ε is reweighting constant
-# ε below 1e-3 is a pain for convergence
-function bpd_candes(A::AbstractMatrix, b::AbstractVector, δ::Real, ε = 1e-2; maxiter = 8)
+# ε below 1e-3 can lead to convergence problems
+function bpd_candes(A::AbstractMatrix, b::AbstractVector, δ::Real, ε::Real = δ; maxiter = 8)
     bpd_reweighting(A, b, δ, candes_function(ε), maxiter = maxiter)
 end
-function bpd_ard(A::AbstractMatrix, b::AbstractVector, δ::Real, ε = 1e-2; maxiter = 8)
+function bpd_ard(A::AbstractMatrix, b::AbstractVector, δ::Real, ε::Real = δ^2; maxiter = 8)
     bpd_reweighting(A, b, δ, ard_function(A, ε), maxiter = maxiter)
 end
 
