@@ -5,7 +5,7 @@ using SparseArrays
 using CompressedSensing: bp, bp_candes, bp_ard, bpd, bpd_candes, bpd_ard, sparse_data, perturb
 
 n, m = 32, 64
-k = 6
+k = 3
 A, x, b = sparse_data(n = n, m = m, k = k, rescaled = true)
 δ = 1e-2
 y = perturb(b, δ/2)

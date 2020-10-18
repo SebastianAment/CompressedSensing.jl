@@ -1,5 +1,5 @@
 include("AISTATS2021_Experiments.jl")
-
+doh5 = true
 δ = 1e-2
 droptol = 1e-3
 algorithms = [(A, b) -> omp(A, b, δ),

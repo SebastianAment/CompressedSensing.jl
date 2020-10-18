@@ -2,25 +2,26 @@
 ######################### Backward Regression Algorithm ########################
 # naive / slow implmentation, see below for more efficient implementation
 struct BackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
-                        V<:AbstractVector{T}, FT} <: AbstractMatchingPursuit{T}
+                        V<:AbstractVector{T}, FT, N} <: AbstractMatchingPursuit{T}
     A::AT # matrix
     b::B # target
     r::V # residual
     AiQR::FT # updatable QR factorization of Ai
     δ²::V # increase in SQUARED residual norm
+    isfast::N # toggles fast implementation
 end
 const BR = BackwardRegression
 const BackwardGreedy = BackwardRegression
 const BOOMP = BR # a.k.a. Backward Optimized OMP
 
-function BR(A::AbstractMatrix, b::AbstractVector)
+function BR(A::AbstractMatrix, b::AbstractVector; isfast::Bool = true)
     n, m = size(A)
     r = zeros(eltype(A), n)
     # AiQR = UpdatableQR(A)
     AiQR = PUQR(A)
     rescaling = colnorms(A)
     δ² = fill(-Inf, m)
-    return BR(A, b, r, AiQR, δ²)
+    return BR(A, b, r, AiQR, δ², Val(isfast))
 end
 
 # calculates a solution to a full column rank (not underdetermined)
@@ -34,7 +35,7 @@ function br(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k:
     P = BR(A, b)
     x = sparsevec(1:m, P.AiQR \ b)
     for _ in m:-1:k+1
-        backward_step!(P, x, max_ε, max_δ) || break
+        backward_step!(P, x, max_ε, max_δ, P.isfast) || break
     end
     return x
 end
@@ -49,11 +50,12 @@ function update!(P::BR, x::SparseVector)
     backward_step!(P, x, Inf, Inf)
 end
 
-function backward_step!(P::Union{FR, BR}, x::SparseVector, max_ε::Real, max_δ::Real)
+function backward_step!(P::Union{FR, BR}, x::SparseVector, max_ε::Real, max_δ::Real,
+                                                        isfast::Val = Val(true))
     nnz(x) > 0 || return false
     residual!(P.r, P.A, x, P.b)
     normr = norm(P.r)
-    δ² = backward_δ!(P, x, normr)
+    δ² = isfast isa Val{true} ? backward_δ!(P, x) : naive_backward_δ!(P, x)
     min_δ², i = findmin(δ²) # drop the atom that leads to the minimum increase of the residual norm
     new_norm = sqrt(min_δ² + normr^2) # since min_δ is the squared marginal increase in norm
     if new_norm < max_ε && min_δ² < max_δ^2
@@ -66,12 +68,27 @@ function backward_step!(P::Union{FR, BR}, x::SparseVector, max_ε::Real, max_δ:
     end
 end
 
-# updates vector of square root of marginal squared norm increase δ
+# getting diagonal of AA⁻¹
+function get_gamma(P::Union{FR, BR})
+    F = P.AiQR
+    E = F.uqr
+    AA = E.R1 \ Matrix(E.R1' \ I)
+    ip = invperm(F.perm)
+    return γ = diag(AA)[ip]
+end
+
+# updates vector of square root of increase in SQUARED norm δ²
 # this is done for compatability with RelevanceMatchingPursuit,
-# since sqrt( |r_{-i}|^2 - |r|^2 ) = |<φ, r>| / |φ|
+# since |r_{-i}|^2 - |r|^2 = |<φ, r>|^2 / |ψ|^2
+function backward_δ!(P::Union{FR, BR}, x::SparseVector)
+    γ = get_gamma(P)
+    @. P.δ²[x.nzind] = x.nzval^2  / γ
+    # return P.δ²[x.nzind]
+end
+
 # WARNING: assumes P.r == P.b - P.A*x
 # or normr = norm(P.b - P.A*x)
-function backward_δ!(P::Union{FR, BR}, x::SparseVector, normr = norm(P.r))
+function naive_backward_δ!(P::Union{FR, BR}, x::SparseVector, normr = norm(P.r))
     # reduce all variables to support of x
     A = @view P.A[:, x.nzind]
     δ² = @view P.δ²[x.nzind]
@@ -90,9 +107,11 @@ function backward_δ!(P::Union{FR, BR}, x::SparseVector, normr = norm(P.r))
     end
     return δ²
 end
+
 ################################################################################
 # see "An Efficient Implementation of the Backward Greedy Algorithm for Sparse Signal Reconstruction"
 # WARNING: potentially more susceptible to ill-conditioned systems
+# except for research purposes, the isfast = true option of BackwardRegression should be used
 # IDEA: could implement corresponding forward regression which keeps track of AA⁻¹ instead of QR
 struct FastBackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
             V<:AbstractVector{T}, AAT<:AbstractMatrix{T}} <: AbstractMatchingPursuit{T}
@@ -151,6 +170,11 @@ function backward_step!(P::FBR, x::SparseVector, max_ε::Real, max_δ::Real)
     normr = norm(residual!(P.r, P.A, x, P.b))
     δ² = backward_δ!(P, x)
     min_δ², i = findmin(δ²) # drop the atom that leads to the minimum increase of the residual norm
+    if min_δ² + normr^2 < 0
+        println(min_δ² + normr^2)
+        println([min_δ², normr^2])
+        throw("numerical instability encountered in backward step")
+    end
     new_norm = sqrt(min_δ² + normr^2) # since δ is the marginal increase of squared norm
     if new_norm < max_ε && min_δ² < max_δ^2
         _dropindex!(x, P, i) # i is index into x.nzval, NOT into x
@@ -207,6 +231,22 @@ function LACE(A::AbstractMatrix, b::AbstractVector)
     LACE(A, b, r, AiQR)
 end
 
+function lace(A::AbstractMatrix, b::AbstractVector;
+        max_residual::Real = Inf, max_increase::Real = Inf, sparsity::Int = 0)
+    return lace(A, b, max_residual, max_increase, sparsity)
+end
+
+# A is overdetermined linear system, b is target, ε is tolerable residual norm
+function lace(A::AbstractMatrix, b::AbstractVector, ε::Real, δ::Real, k::Int)
+    n, m = size(A)
+    L = LACE(A, b)
+    x = sparse(ones(eltype(A), size(A, 2)))
+    ldiv!(x.nzval, L.AiQR, L.b)
+    for _ in m:-1:k+1
+        backward_step!(L, x, ε, δ) || break
+    end
+    return x
+end
 # input x is assumed to be ls-solution with current active set
 function update!(P::LACE, x::SparseVector)
     i = argmin(abs, x.nzval) # choose least absolute coefficient magnitude from current support
@@ -226,68 +266,14 @@ function backward_step!(P::LACE, x::SparseVector, max_ε::Real, max_δ::Real)
     ldiv!(x.nzval, P.AiQR, P.b) # solve smaller system
 
     residual!(P.r, P.A, x, P.b) # new residual
-    δ = norm(P.r) - normr # change in residual magnitude
-    if normr + δ < max_ε && δ < max_δ
+    δ² = norm(P.r)^2 - normr^2 # change in residual magnitude
+    newnorm = sqrt(normr^2 + δ²)
+    if newnorm < max_ε && δ² < max_δ^2
         return true
     else
-        Aj = @view P.A[:,j]
+        Aj = @view P.A[:,j] # if we can't accept the deletion,
         addindex!(x, P.AiQR, Aj, j) # add back the atom we deleted
         ldiv!(x.nzval, P.AiQR, P.b)
         return false
     end
 end
-
-function lace(A::AbstractMatrix, b::AbstractVector;
-        max_residual::Real = Inf, max_increase::Real = Inf, sparsity::Int = 0)
-    return lace(A, b, max_residual, sparsity)
-end
-
-# A is overdetermined linear system, b is target, ε is tolerable residual norm
-function lace(A::AbstractMatrix, b::AbstractVector, ε::Real, k::Int)
-    n, m = size(A)
-    L = LACE(A, b)
-    x = sparse(ones(eltype(A), size(A, 2)))
-    ldiv!(x.nzval, L.AiQR, L.b)
-    for _ in m:-1:k+1
-        backward_step!(L, x, ε, Inf) || break
-        # update!(L, x)
-        # residual!(P.r, P.A, x, P.b)
-        # if norm(L.r) > ε
-        #     break
-        # end
-    end
-    return x
-end
-
-########################### probabilistic bounds ###############################
-# calculates bound on maximum inner product of
-# standard normal random vector with n l2-normalized vectors
-# function normal_infbound(p, n)
-#     η = 2*(1-p)*sqrt(π/log(n))
-#     return sqrt(2*(1+η)*log(n))
-# end
-#
-# # calculates a bound on the maximum absolute value
-# # of n standard normal random variables
-# # which is satisfied with probability p
-# function br_maxbound(p, n)
-#    d = (1+p^(1/n)) / 2
-#    return erfinv(d)
-# end
-# # calculates a bound on the minimum absolute value
-# # of n standard normal random variables
-# # which is satisfied with probability p
-# function br_minbound(p, n)
-#    d = 1 - (1-p)^(1/n) / 2
-#    return erfinv(d)
-# end
-#
-# # computes both existing infbound, and the new min-max-bound
-# # p is probability with which the bound should hold
-# # n is size of linear system
-# # k is sparsity level of true solution
-# function br_compare_gaussian_bounds(p, n, k)
-#     dnew = br_maxbound(√p, k) + br_minbound(√p, n-k)
-#     dold = √2 * inner_infbound(p, (n-k)*k)
-#     return dnew, dold
-# end

@@ -133,21 +133,3 @@ function _plot(subsampling_fractions::AbstractVector, sparsity_fractions::Abstra
         gui()
     end
 end
-
-# function RecoveryExperiment(noisy::Bool, coherent::Bool)
-#     n, m = 64, 128
-#     nexp = 128
-#     ε = 1e-4
-#     δ = noisy ? 1e-2 : 1e-6
-#     data_generator = coherent ? coherent_data : gaussian_data
-#
-#     # data_generator = ()->gaussian_data(n, m)
-#     if !coherent
-#         k = 8:4:32
-#     elseif noisy
-#         k = 1:1:7
-#     elseif !noisy
-#         k = [1, 2, 4, 8, 12, 16, 20, 24, 28]
-#     end
-#     return RecoveryExperiment(n, m, k, nexp, data_generator)
-# end

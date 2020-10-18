@@ -17,19 +17,6 @@ const OOMP = OLS # a.k.a. Optimal OMP
 const ORMP = OLS # a.k.a order-recursive matching pursuit
 const StepwiseRegression = FR
 
-# function FR(A::AbstractMatrix, b::AbstractVector)
-#     n, m = size(A)
-#     T = eltype(A)
-#     r, Ar = zeros(T, n), zeros(T, m)
-#     QA = zeros(T, (n, m))
-#     # AiQR = UpdatableQR(reshape(A[:, 1], :, 1))
-#     AiQR = PUQR(reshape(A[:, 1], :, 1))
-#     remove_column!(AiQR)
-#     rescaling = colnorms(A)
-#     δ² = fill(-Inf, m)
-#     FR(A, b, r, QA, AiQR, δ², rescaling)
-# end
-
 FR(A::AbstractMatrix, b::AbstractVector, x::SparseVector) = FR(A, b, x.nzind)
 function FR(A::AbstractMatrix, b::AbstractVector, nzind::AbstractVector{Int} = ones(Int, 0))
     n, m = size(A)
@@ -73,6 +60,7 @@ function forward_step!(P::FR, x::SparseVector, max_ε::Real, min_δ::Real)
     δ² = forward_δ!(P, x)
     max_δ², i = findmax(δ²)
     if min_δ^2 < max_δ²
+        # println(i)
         a = @view P.A[:, i]
         addindex!(x, P.AiQR, a, i) # i is index into x.nzval, NOT into x
         ldiv!(x.nzval, P.AiQR, P.b)
@@ -120,6 +108,5 @@ function ols_rescaling!(P::OLS, x::SparseVector)
             @inbounds P.rescaling[j] -= QA[i,j]^2
         end
     end
-    # @. P.rescaling = sqrt(max(P.rescaling, 0))
     return P.rescaling
 end

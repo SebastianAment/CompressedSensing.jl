@@ -36,11 +36,11 @@ end
 
 sbl(A, b, σ::Real) = sbl(A, b, σ^2*I(length(b)))
 function sbl(A::AbstractMatrix, b::AbstractVector, Σ::AbstractMatOrUni;
-                        maxiter::Int = 2size(A, 2), min_change::Real = 1e-6)
+                        maxiter::Int = 128size(A, 2), min_change::Real = 1e-6)
     P = SBL(A, b, Σ)
     x = zeros(size(A, 2))
     γ_old = copy(P.Γ.diag)
-    for _ in 1:maxiter
+    for i in 1:maxiter
         update!(P, x)
         if norm(γ_old - P.Γ.diag) < min_change
             break
