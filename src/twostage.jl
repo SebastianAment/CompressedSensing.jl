@@ -1,10 +1,20 @@
 ################### stepwise regression with replacement (SRR) #################
 # one-lookahead greedy two-step algorithm, based on stepwise regression algorithms
 function srr(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
-                            x = spzeros(eltype(A), size(A, 2)); maxiter = 4k)
+                                            x = spzeros(eltype(A), size(A, 2));
+                                            maxiter = 4k, initialization::Int = 1)
     P = StepwiseRegression(A, b, x.nzind)
-    # oblivious_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
-    random_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
+    # initialize support with k atoms using
+    if initialization == 1 # forward regression
+        for _ in 1:k
+            update!(P, x)
+        end
+    elseif initialization == 2 # oblivious algorithm
+        oblivious_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
+    elseif initialization == 3 # random indices
+        random_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
+    end
+
     resnorm = norm(residual!(P, x))
     for i in 1:maxiter
         oldnorm = resnorm
@@ -16,6 +26,12 @@ function srr(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
         end
     end
     return x
+end
+
+@inline function argmaxinner!(P::StepwiseRegression, k::Int)
+    Ar = P.A' * P.r
+    @. Ar = abs(Ar)
+    partialsortperm(Ar, 1:k, rev = true)
 end
 
 ################################## Subspace Pursuit ############################
@@ -64,13 +80,16 @@ end
 
 # calculates k-sparse approximation to Ax = b via subspace pursuit
 # could also stop if indices are same between iterations
-function sp(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12; maxiter = 16)
+function sp(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12; maxiter = 16k)
     P = SP(A, b, k)
     x = spzeros(size(A, 2))
     sp_acquisition!(P, x, P.k)
+    resnorm = norm(residual!(P, x))
     for i in 1:maxiter
+        oldnorm = resnorm
         update!(P, x)
-        if norm(residual!(P, x)) < δ # if we found a solution with the required sparsity we're done
+        resnorm = norm(residual!(P, x))
+        if resnorm ≤ δ || oldnorm ≤ resnorm
             break
         end
     end
