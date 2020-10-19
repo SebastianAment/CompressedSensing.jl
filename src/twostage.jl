@@ -16,14 +16,13 @@ function srr(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
         random_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
     end
     resnorm = norm(residual!(P, x))
-    resnorm != 0 || return x # happens if k = 1 and b is without noise
     for i in 1:maxiter
         oldnorm = resnorm
         for _ in 1:l
-            forward_step!(P, x, 0, 0) # always add
+            forward_step!(P, x, 0, 0) || break # add unless we found a solution
         end
-        for _ in 1:l
-            backward_step!(P, x, Inf, Inf) # always delete
+        while nnz(x) > k # delete until we have an active set of size k
+            backward_step!(P, x, Inf, Inf)
         end
         resnorm = norm(residual!(P, x))
         if resnorm ≤ δ || oldnorm ≤ resnorm # until convergence or stationarity
