@@ -2,24 +2,29 @@
 # one-lookahead greedy two-step algorithm, based on stepwise regression algorithms
 function srr(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
                                             x = spzeros(eltype(A), size(A, 2));
-                                            maxiter = 4k, initialization::Int = 1)
+                                            maxiter = 4k, initialization::Int = 1,
+                                            l::Int = 1)
     P = StepwiseRegression(A, b, x.nzind)
     # initialize support with k atoms using
-    if initialization == 1 # forward regression
+    if initialization == 1 # oblivious algorithm
+        oblivious_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
+    elseif initialization == 2 # forward regression
         for _ in 1:k
             update!(P, x)
         end
-    elseif initialization == 2 # oblivious algorithm
-        oblivious_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
     elseif initialization == 3 # random indices
         random_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
     end
     resnorm = norm(residual!(P, x))
-    resnorm != 0 || return x # happens if k = 1 and b is without noise 
+    resnorm != 0 || return x # happens if k = 1 and b is without noise
     for i in 1:maxiter
         oldnorm = resnorm
-        forward_step!(P, x, 0, 0) # always add
-        backward_step!(P, x, Inf, Inf) # always delete
+        for _ in 1:l
+            forward_step!(P, x, 0, 0) # always add
+        end
+        for _ in 1:l
+            backward_step!(P, x, Inf, Inf) # always delete
+        end
         resnorm = norm(residual!(P, x))
         if resnorm ≤ δ || oldnorm ≤ resnorm # until convergence or stationarity
             break
