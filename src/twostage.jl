@@ -14,8 +14,8 @@ function srr(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
     elseif initialization == 3 # random indices
         random_acquisition!(P, x, k-nnz(x)) # initialize with k largest inner products
     end
-
     resnorm = norm(residual!(P, x))
+    resnorm != 0 || return x # happens if k = 1 and b is without noise 
     for i in 1:maxiter
         oldnorm = resnorm
         forward_step!(P, x, 0, 0) # always add

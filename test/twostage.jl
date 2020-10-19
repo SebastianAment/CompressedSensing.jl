@@ -1,9 +1,9 @@
 module TestTwoStage
 using Test
-using CompressedSensing: gaussian_data, perturb, srr, sp, ompr
+using CompressedSensing: gaussian_data, perturb, srr, sp, ompr, sparse_vector
 
 @testset "Two-Stage Algorithms" begin
-    n, m, k = 32, 64, 3
+    n, m, k = 64, 128, 3
     A, x, b = gaussian_data(n, m, k)
     δ = 1e-2
     y = perturb(b, δ/2)
@@ -13,6 +13,12 @@ using CompressedSensing: gaussian_data, perturb, srr, sp, ompr
         xsrr = srr(A, b, k)
         @test xsrr.nzind == x.nzind
         @test xsrr.nzval ≈ x.nzval
+
+        # special case
+        x1 = sparse_vector(m, 1)
+        xsrr = srr(A, A*x1, 1)
+        @test xsrr.nzind == x1.nzind
+        @test xsrr.nzval ≈ x1.nzval
 
         # noisy
         xsrr = srr(A, y, k)
