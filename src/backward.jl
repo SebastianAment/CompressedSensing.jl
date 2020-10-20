@@ -1,6 +1,5 @@
 # backward algorithms
 ######################### Backward Regression Algorithm ########################
-# naive / slow implmentation, see below for more efficient implementation
 struct BackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
                         V<:AbstractVector{T}, FT, N} <: AbstractMatchingPursuit{T}
     A::AT # matrix
@@ -30,9 +29,9 @@ end
 # max_δ is the largest marginal increase in residual norm before the algorithm terminates
 # k is the desired sparsity of the solution
 # whichever criterion is hit first
-function br(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k::Int)
+function br(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k::Int; isfast::Bool = true)
     m = size(A, 2)
-    P = BR(A, b)
+    P = BR(A, b, isfast = isfast)
     x = sparsevec(1:m, P.AiQR \ b)
     for _ in m:-1:k+1
         backward_step!(P, x, max_ε, max_δ, P.isfast) || break
@@ -41,9 +40,9 @@ function br(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k:
 end
 
 # keyword version
-function br(A::AbstractMatrix, b::AbstractVector;
-     max_residual::Real = Inf, max_increase::Real = Inf, sparsity::Int = 0)
-     br(A, b, max_residual, max_increase, sparsity)
+function br(A::AbstractMatrix, b::AbstractVector; max_residual::Real = Inf,
+            max_increase::Real = Inf, sparsity::Int = 0, isfast::Bool = true)
+     br(A, b, max_residual, max_increase, sparsity, isfast = isfast)
 end
 
 function update!(P::BR, x::SparseVector)
