@@ -3,7 +3,7 @@ using Test
 using CompressedSensing: gaussian_data, perturb, rmp, foba
 
 @testset "Stepwise Regression Algorithms" begin
-    n, m, k = 16, 32, 3
+    n, m, k = 32, 64, 3
     A, x, b = gaussian_data(n, m, k)
     δ = 1e-2
     y = perturb(b, δ)

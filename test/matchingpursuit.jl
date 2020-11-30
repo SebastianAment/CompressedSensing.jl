@@ -15,8 +15,8 @@ using SparseArrays
 
     @testset "Matching Pursuit" begin
         xmp = mp(A, b, 3k) # giving more iterations to optimize
-        @test isapprox(A*xmp, b, atol = 2δ)
-        @test isapprox(xmp.nzval, x.nzval, atol = 2δ)
+        @test isapprox(A*xmp, b, atol = 5δ)
+        @test isapprox(xmp.nzval, x.nzval, atol = 5δ)
     end
 
     @testset "Orthogonal Matching Pursuit" begin

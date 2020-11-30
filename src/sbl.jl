@@ -34,7 +34,7 @@ function update!(S::SBL, x::AbstractVector = zeros(size(S.Γ, 2)))
     return x
 end
 
-sbl(A, b, σ::Real) = sbl(A, b, σ^2*I(length(b)))
+sbl(A, b, σ²::Real) = sbl(A, b, σ²*I(length(b)))
 function sbl(A::AbstractMatrix, b::AbstractVector, Σ::AbstractMatOrUni;
                         maxiter::Int = 128size(A, 2), min_change::Real = 1e-6)
     P = SBL(A, b, Σ)
@@ -82,12 +82,12 @@ function FSBL(A::AbstractMatrix, b::AbstractVector, Σ)
     FSBL(A, b, Σ, α, S, Q, δ, C⁻¹)
 end
 
-function FSBL(A::AbstractMatrix, b::AbstractVector, σ::Real)
-    FSBL(A, b, σ^2*I(length(b)))
+function FSBL(A::AbstractMatrix, b::AbstractVector, σ²::Real)
+    FSBL(A, b, σ²*I(length(b)))
 end
 
 ##################### Relevance Matching Pursuit (RMP_σ) #########################
-# TODO: could probably merge FSBL and RMPS types
+# IDEA: could merge FSBL and RMPS types
 struct RMPS{T, AT<:AbstractMatrix{T}, BT, NT, A, CT} <: Update{T}
     A::AT
     b::BT
@@ -100,21 +100,33 @@ struct RMPS{T, AT<:AbstractMatrix{T}, BT, NT, A, CT} <: Update{T}
     δ::A # holds difference in marginal likelihood for updating an atom
     C⁻¹::CT # TODO: use Woodbury type here
 end
-function RMPS(A::AbstractMatrix, b::AbstractVector, σ::Real)
-    RMPS(A, b, σ^2*I(length(b)))
+function RMPS(A::AbstractMatrix, b::AbstractVector, σ²::Real, α::AbstractVector = fill(Inf, size(A, 2)))
+    RMPS(A, b, σ²*I(length(b)), α)
 end
-function RMPS(A::AbstractMatrix, b::AbstractVector, Σ::AbstractMatOrFac)
+
+# α is the inverse of γ, the prior variances of x
+function RMPS(A::AbstractMatrix, b::AbstractVector, Σ::AbstractMatOrFac,
+                                    α::AbstractVector = fill(Inf, size(A, 2)))
     n, m = size(A)
-    α = fill(Inf, m)
     δ = similar(α)
-    Σ = factorize(Σ)
-    ΣA = Σ \ A
-    Q = ΣA' * b
-    ΣA .*= A
-    S = vec(sum(ΣA, dims = 1))
-    C⁻¹ = Matrix(inv(Σ))
+    C = if all(isinf, α)
+            Σ
+        else
+            i = .!isinf.(α)
+            γ = inv.(α[i])
+            Γ = Diagonal(γ)
+            Ai = A[:, i]
+            Woodbury(Σ, Ai, Γ, Ai')
+        end
+    C = factorize(C)
+    CA = C \ A
+    Q = CA' * b
+    CA .*= A
+    S = vec(sum(CA, dims = 1))
+    C⁻¹ = Matrix(inv(C))
     RMPS(A, b, Σ, α, S, Q, δ, C⁻¹)
 end
+
 # TODO: this can be done more efficiently with P.C
 function Base.getproperty(S::Union{FSBL, RMPS}, s::Symbol)
     if s == :x
@@ -134,8 +146,8 @@ end
 # optimizes prior variances, returns corresponding weight estimate
 # min_increase is the minimum increase in the marginal likelihood below which
 # the algorithm terminates
-function fsbl(A, b, σ; maxiter = 2size(A, 2), min_increase = 1e-6)
-    P = FSBL(A, b, σ)
+function fsbl(A, b, Σ; maxiter = 2size(A, 2), min_increase = 1e-6)
+    P = FSBL(A, b, Σ)
     optimize!(P, maxiter = maxiter, min_increase = min_increase)
     P.x
 end
@@ -353,15 +365,23 @@ function update_SQC!(P::Union{FSBL, RMPS}, i::Int, γ::Real)
 end
 
 ################################################################################
-# σ is the noise variance
+# Σ is the noise variance (scalar or matrix)
 # maxiter is the maximum number of outer iterations
 # maxiter_acquisition is the maximum number of iterations per aquisition stage
 # maxiter_deletion is the maximum number of iterations per deletion stage
 # min_increase is the minimum increase in marginal likelihood, below which the algorithm terminates
-function rmps(A, b, σ; maxiter::Int = size(A, 1),
-                    maxiter_acquisition::Int = size(A, 1),
-                    maxiter_deletion::Int = size(A, 1), min_increase = 1e-6) # in RMP experiments this was min_increase = 1e-2
-    P = RMPS(A, b, σ)
+function rmps(A, b, Σ; maxiter::Int = size(A, 1), maxiter_acquisition::Int = size(A, 1),
+                    maxiter_deletion::Int = size(A, 1), min_increase::Real = 1e-6) # in RMP experiments this was min_increase = 1e-2
+    P = RMPS(A, b, Σ)
+    optimize!(P, maxiter = maxiter, maxiter_acquisition = maxiter_acquisition,
+                maxiter_deletion = maxiter_deletion, min_increase = min_increase)
+    return P.x
+end
+
+function optimize!(P::RMPS; maxiter::Int = size(P.A, 1),
+                            maxiter_acquisition::Int = size(P.A, 1),
+                            maxiter_deletion::Int = size(P.A, 1),
+                            min_increase::Real = 1e-6)
     A, b, Σ, S, Q = P.A, P.b, P.Σ, P.S, P.Q
     α = P.α
     α .= Inf
@@ -382,7 +402,7 @@ function rmps(A, b, σ; maxiter::Int = size(A, 1),
         old_α != α || break # while norm of α is still changing
         old_α .= α
     end
-    return P.x
+    return P
 end
 
 # acquisition and update are identical to fast sbl
@@ -416,26 +436,31 @@ function rmp_deletion_value(α::Real, S::Real, Q::Real)
     end
 end
 
-# acquires new atom
-# TODO: update S, Q accordingly
-# updates S, Q after adding i and setting variance to optimal value
-# function add_update!(P::RMPS, i::Int)
-#     # β = 1/P.Σ.λ # 1/σ^2
-#     α, S, Q, A = P.α, P.S, P.Q, P.A
-#     β = 1/1e-4
-#     Σ = inv(Diagonal(α) + β * A'A)
-#     s_ii = (α[i] .+ S[i]).^(-1)
-#     m_i = s_ii * Q[i]
-#     a = @view A[:, i]
-#     ei = a .- β * (A * (Σ * (A' * a)))
-#     # temp = Σ*A'*a
-#     mCi = β * (A' * ei)
-#     @. S -= s_ii * mCi^2
-#     @. Q -= m_i * mCi
-#     # for m in 1:length(S)
-#         # mCi = (β * dot(A[:, m], ei))
-#         # S[m] -= s_ii * mCi^2
-#         # Q[m] -= m_i * mCi
-#     # end
-#     return S, Q
-# end
+##################### optimization of noise variance ###########################
+# optimizes noise variance in an outer loop above rmps
+function rmps(A, b, ::Val{true}, σ²::Real = 1e-2;
+                        maxiter::Int = 2size(A, 2), min_increase::Real = 1e-6,
+                        maxouteriter::Int = 16, min_change::Real = 1e-12)
+    α = fill(Inf, size(A, 2))
+    for i in 1:maxouteriter
+        P = RMPS(A, b, σ², α)
+        optimize!(P, maxiter = maxiter, min_increase = min_increase)
+        α = P.α
+        σ²_new = estimate_σ²(P)
+        converged = abs(σ²_new - σ²) < min_change
+        σ² = σ²_new
+        if converged
+            break
+        end
+    end
+    x = RMPS(A, b, σ², α).x
+    return x, σ²
+end
+
+function estimate_σ²(P::RMPS, x::AbstractVector = P.x)
+    estimate_σ²(P.A, x, P.b, inv.(P.α))
+end
+function estimate_σ²(A::AbstractMatrix, x::AbstractVector, b::AbstractVector, γ::AbstractVector)
+    n = size(A, 1)
+    sum(abs2, b-A*x) / (n - sum(γ))
+end

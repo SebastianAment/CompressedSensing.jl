@@ -19,6 +19,7 @@ const StepwiseRegression = FR
 
 FR(A::AbstractMatrix, b::AbstractVector, x::SparseVector) = FR(A, b, x.nzind)
 function FR(A::AbstractMatrix, b::AbstractVector, nzind::AbstractVector{Int} = ones(Int, 0))
+    size(A, 1) == length(b) || throw(DimensionMismatch("size(A, 1) = $(size(A, 1)) ≠ $(length(b)) = length(b)"))
     n, m = size(A)
     T = eltype(A)
     r, Ar = zeros(T, n), zeros(T, m)
@@ -43,7 +44,7 @@ end
 function fr(A::AbstractMatrix, b::AbstractVector, max_ε::Real, min_δ::Real,
             k::Int = size(A, 1), x = spzeros(size(A, 2)))
     P = FR(A, b)
-    for _ in 1:k
+    for i in 1:k
         forward_step!(P, x, max_ε, min_δ) || break
     end
     return x
