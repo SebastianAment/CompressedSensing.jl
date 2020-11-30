@@ -438,7 +438,9 @@ end
 
 ##################### optimization of noise variance ###########################
 # optimizes noise variance in an outer loop above rmps
-function rmps(A, b, ::Val{true}, σ²::Real = 1e-2;
+# a_σ², b_σ² are shape and scale parameter for Inverse Gamma prior on σ²
+function rmps(A::AbstractMatrix, b::AbstractVector, optimize_σ²::Val{true},
+                        σ²::Real = 1e-2, a_σ²::Real = 0, b_σ²::Real = 0;
                         maxiter::Int = 2size(A, 2), min_increase::Real = 1e-6,
                         maxouteriter::Int = 16, min_change::Real = 1e-12)
     α = fill(Inf, size(A, 2))
@@ -446,7 +448,7 @@ function rmps(A, b, ::Val{true}, σ²::Real = 1e-2;
         P = RMPS(A, b, σ², α)
         optimize!(P, maxiter = maxiter, min_increase = min_increase)
         α = P.α
-        σ²_new = estimate_σ²(P)
+        σ²_new = estimate_σ²(P, a_σ², b_σ²)
         converged = abs(σ²_new - σ²) < min_change
         σ² = σ²_new
         if converged
@@ -457,10 +459,12 @@ function rmps(A, b, ::Val{true}, σ²::Real = 1e-2;
     return x, σ²
 end
 
-function estimate_σ²(P::RMPS, x::AbstractVector = P.x)
-    estimate_σ²(P.A, x, P.b, inv.(P.α))
+function estimate_σ²(P::RMPS, a_σ²::Real = 0, b_σ²::Real = 0)
+    estimate_σ²(P.A, P.x, P.b, inv.(P.α), a_σ², b_σ²)
 end
-function estimate_σ²(A::AbstractMatrix, x::AbstractVector, b::AbstractVector, γ::AbstractVector)
+# with inverse-gamma prior on σ² with shape and scale parameters a, b
+function estimate_σ²(A::AbstractMatrix, x::AbstractVector, b::AbstractVector,
+                    γ::AbstractVector, a_σ²::Real = 0, b_σ²::Real = 0)
     n = size(A, 1)
-    sum(abs2, b-A*x) / (n - sum(γ))
+    (sum(abs2, b-A*x) + 2b_σ²) / (n - sum(γ) + 2a_σ²)
 end

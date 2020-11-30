@@ -33,6 +33,12 @@ y = perturb(b, σ/2)
     @test σ²_opt isa Real
     @test norm(A*xrmps-y) < 5sqrt(σ²_opt) * size(A, 1)
 
+    # rmp with noise variance optimization with prior over σ
+    σ_init = σ
+    xrmps, σ²_opt = rmps(A, y, Val(true), σ_init^2, 1, σ_init^2)
+    @test norm(A*xrmps-y) < 5sqrt(σ²_opt) * size(A, 1)
+    @test isapprox(σ²_opt, σ^2, rtol = 2) # noise variance is approximately recovered
+
     # zero noise limit of relevance matching pursuit
     xrmp = rmp(A, y, σ)
     @test xrmp.nzind == x.nzind
