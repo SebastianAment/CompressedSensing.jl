@@ -76,7 +76,7 @@ function update!(P::OMP, x::AbstractVector = spzeros(size(P.A, 2)))
     return x
 end
 
-# approximately solves Ax = b with error tolerance δ it at most k steps
+# approximately solves Ax = b with error tolerance ε it at most k steps
 function omp(A::AbstractMatrix, b::AbstractVector, ε::Real, k::Int = size(A, 1))
     ε ≥ 0 || throw("ε = $ε has to be non-negative")
     P = OMP(A, b)
