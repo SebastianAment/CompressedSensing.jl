@@ -1,5 +1,5 @@
 # exhaustive search for k-subset selection
-function exhaustive(A::AbstractMatrix, b::AbstractVector, k::Int)
+function exhaustive(A::AbstractMatOrFac, b::AbstractVector, k::Int)
     n, m = size(A)
     x = zeros(k)
     indices = CartesianIndices(tuple((1:n for _ in 1:k)...))

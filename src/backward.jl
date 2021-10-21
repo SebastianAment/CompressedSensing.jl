@@ -1,6 +1,6 @@
 # backward algorithms
 ######################### Backward Regression Algorithm ########################
-struct BackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
+struct BackwardRegression{T, AT<:AbstractMatOrFac{T}, B<:AbstractVector{T},
                         V<:AbstractVector{T}, FT, N} <: AbstractMatchingPursuit{T}
     A::AT # matrix
     b::B # target
@@ -13,11 +13,10 @@ const BR = BackwardRegression
 const BackwardGreedy = BackwardRegression
 const BOOMP = BR # a.k.a. Backward Optimized OMP
 
-function BR(A::AbstractMatrix, b::AbstractVector; isfast::Bool = true)
+function BR(A::AbstractMatOrFac, b::AbstractVector; isfast::Bool = true)
     n, m = size(A)
     r = zeros(eltype(A), n)
-    # AiQR = UpdatableQR(A)
-    AiQR = PUQR(A)
+    AiQR = UpdatableQR(A)
     rescaling = colnorms(A)
     δ² = fill(-Inf, m)
     return BR(A, b, r, AiQR, δ², Val(isfast))
@@ -29,7 +28,7 @@ end
 # max_δ is the largest marginal increase in residual norm before the algorithm terminates
 # k is the desired sparsity of the solution
 # whichever criterion is hit first
-function br(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k::Int; isfast::Bool = true)
+function br(A::AbstractMatOrFac, b::AbstractVector, max_ε::Real, max_δ::Real, k::Int; isfast::Bool = true)
     m = size(A, 2)
     P = BR(A, b, isfast = isfast)
     x = sparsevec(1:m, P.AiQR \ b)
@@ -40,7 +39,7 @@ function br(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k:
 end
 
 # keyword version
-function br(A::AbstractMatrix, b::AbstractVector; max_residual::Real = Inf,
+function br(A::AbstractMatOrFac, b::AbstractVector; max_residual::Real = Inf,
             max_increase::Real = Inf, sparsity::Int = 0, isfast::Bool = true)
      br(A, b, max_residual, max_increase, sparsity, isfast = isfast)
 end
@@ -59,19 +58,17 @@ function backward_step!(P::Union{FR, BR}, x::SparseVector, max_ε::Real, max_δ:
     new_norm = sqrt(min_δ² + normr^2) # since min_δ is the squared marginal increase in norm
     if new_norm < max_ε && min_δ² < max_δ^2
         _dropindex!(x, P.AiQR, i) # i is index into x.nzval, NOT into x
-        ldiv!(x.nzval, P.AiQR, P.b)
+        ldiv!!(x.nzval, P.AiQR, P.b, P.r)
         return true
     else
-        ldiv!(x.nzval, P.AiQR, P.b)
+        ldiv!!(x.nzval, P.AiQR, P.b, P.r)
         return false
     end
 end
 
-# getting diagonal of AA⁻¹
 function get_gamma(P::Union{FR, BR})
     F = P.AiQR
-    E = F.uqr
-    AA = E.R1 \ Matrix(E.R1' \ I)
+    AA = F.R \ Matrix(F.R' \ I)
     ip = invperm(F.perm)
     return γ = diag(AA)[ip]
 end
@@ -85,7 +82,7 @@ function backward_δ!(P::Union{FR, BR}, x::SparseVector)
     # return P.δ²[x.nzind]
 end
 
-# WARNING: assumes P.r == P.b - P.A*x
+# WARNING: assumes P.r == P.b - P.A*x when function is called
 # or normr = norm(P.b - P.A*x)
 function naive_backward_δ!(P::Union{FR, BR}, x::SparseVector, normr = norm(P.r))
     # reduce all variables to support of x
@@ -98,7 +95,7 @@ function naive_backward_δ!(P::Union{FR, BR}, x::SparseVector, normr = norm(P.r)
         a = @view A[:, i]
         Ai = @view A[:, filter(!=(i), 1:length(x.nzind))]
         remove_column!(P.AiQR, i)
-        ldiv!(y, P.AiQR, P.b)
+        ldiv!!(y, P.AiQR, P.b, P.r)
         P.r .= P.b
         mul!(P.r, Ai, y, -1, 1)
         δ²[i] = norm(P.r)^2 - normr^2 # squared residual norm increase
@@ -112,8 +109,8 @@ end
 # WARNING: potentially more susceptible to ill-conditioned systems
 # except for research purposes, the isfast = true option of BackwardRegression should be used
 # IDEA: could implement corresponding forward regression which keeps track of AA⁻¹ instead of QR
-struct FastBackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
-            V<:AbstractVector{T}, AAT<:AbstractMatrix{T}} <: AbstractMatchingPursuit{T}
+struct FastBackwardRegression{T, AT<:AbstractMatOrFac{T}, B<:AbstractVector{T},
+            V<:AbstractVector{T}, AAT<:AbstractMatOrFac{T}} <: AbstractMatchingPursuit{T}
     A::AT # matrix
     b::B # target
     r::V # residual
@@ -122,19 +119,19 @@ struct FastBackwardRegression{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T},
     δ²::V # increase in SQUARED residual norm
 end
 const FBR = FastBackwardRegression
-function FBR(A::AbstractMatrix, b::AbstractVector)
+function FBR(A::AbstractMatOrFac, b::AbstractVector)
     r = similar(b)
     return FBR(A, b, r, qr(A))
 end
 # utilizing the already existing QR-factorization
-function FBR(A::AbstractMatrix, b::AbstractVector, r::AbstractVector, F::Factorization)
+function FBR(A::AbstractMatOrFac, b::AbstractVector, r::AbstractVector, F::Factorization)
     n, m = size(A)
     AA = F.R \ Matrix(F.R' \ I(m))
     Ab = A'b
     δ² = zeros(m)
     return FBR(A, b, r, AA, Ab, δ²)
 end
-function FBR(A::AbstractMatrix, b::AbstractVector, r::AbstractVector, F::PUQR)
+function FBR(A::AbstractMatOrFac, b::AbstractVector, r::AbstractVector, F::PUQR)
     n, m = size(F)
     E = F.uqr
     AA = E.R1 \ Matrix(E.R1' \ I(m))
@@ -149,12 +146,12 @@ function FBR(P::FR)
     FBR(P.A, P.b, P.r, P.AiQR)
 end
 # TODO: has some overlap with BackwardRegression, which could be consolidated
-function fbr(A::AbstractMatrix, b::AbstractVector;
+function fbr(A::AbstractMatOrFac, b::AbstractVector;
      max_residual::Real = Inf, max_increase::Real = Inf, sparsity::Int = 0)
      fbr(A, b, max_residual, max_increase, sparsity)
 end
 
-function fbr(A::AbstractMatrix, b::AbstractVector, max_ε::Real, max_δ::Real, k::Int)
+function fbr(A::AbstractMatOrFac, b::AbstractVector, max_ε::Real, max_δ::Real, k::Int)
     m = size(A, 2)
     P = FBR(A, b)
     x = sparsevec(1:m, P.AA⁻¹ * P.Ab)
@@ -216,13 +213,13 @@ end
 
 ################################# LACE #########################################
 # Least Absolute Coefficient Elimination
-struct LACE{T, AT<:AbstractMatrix{T}, BT<:AbstractVector{T}, V<:AbstractVector{T}, FT}
+struct LACE{T, AT<:AbstractMatOrFac{T}, BT<:AbstractVector{T}, V<:AbstractVector{T}, FT}
     A::AT # dictionary
     b::BT # target
     r::V # residual
     AiQR::FT # UpdatableQR
 end
-function LACE(A::AbstractMatrix, b::AbstractVector)
+function LACE(A::AbstractMatOrFac, b::AbstractVector)
     r = similar(b)
     n, m = size(A)
     n ≥ m || throw("A needs to be overdetermined but is of size ($n, $m)")
@@ -230,17 +227,17 @@ function LACE(A::AbstractMatrix, b::AbstractVector)
     LACE(A, b, r, AiQR)
 end
 
-function lace(A::AbstractMatrix, b::AbstractVector;
+function lace(A::AbstractMatOrFac, b::AbstractVector;
         max_residual::Real = Inf, max_increase::Real = Inf, sparsity::Int = 0)
     return lace(A, b, max_residual, max_increase, sparsity)
 end
 
 # A is overdetermined linear system, b is target, ε is tolerable residual norm
-function lace(A::AbstractMatrix, b::AbstractVector, ε::Real, δ::Real, k::Int)
+function lace(A::AbstractMatOrFac, b::AbstractVector, ε::Real, δ::Real, k::Int)
     n, m = size(A)
     L = LACE(A, b)
     x = sparse(ones(eltype(A), size(A, 2)))
-    ldiv!(x.nzval, L.AiQR, L.b)
+    ldiv!!(x.nzval, L.AiQR, L.b, L.r)
     for _ in m:-1:k+1
         backward_step!(L, x, ε, δ) || break
     end
@@ -250,7 +247,7 @@ end
 function update!(P::LACE, x::SparseVector)
     i = argmin(abs, x.nzval) # choose least absolute coefficient magnitude from current support
     _dropindex!(x, P.AiQR, i) # drops ith atom in active set
-    ldiv!(x.nzval, P.AiQR, P.b) # optimize all active atoms
+    ldiv!!(x.nzval, P.AiQR, P.b, P.r)
     return x
 end
 
@@ -262,7 +259,7 @@ function backward_step!(P::LACE, x::SparseVector, max_ε::Real, max_δ::Real)
     i = argmin(abs, x.nzval) # choose least absolute coefficient magnitude from current support
     j = x.nzind[i] # remember which atom we are deleting
     _dropindex!(x, P.AiQR, i) # i is index into x.nzval, NOT into x
-    ldiv!(x.nzval, P.AiQR, P.b) # solve smaller system
+    ldiv!!(x.nzval, P.AiQR, P.b, P.r)
 
     residual!(P.r, P.A, x, P.b) # new residual
     δ² = norm(P.r)^2 - normr^2 # change in residual magnitude
@@ -272,7 +269,7 @@ function backward_step!(P::LACE, x::SparseVector, max_ε::Real, max_δ::Real)
     else
         Aj = @view P.A[:,j] # if we can't accept the deletion,
         addindex!(x, P.AiQR, Aj, j) # add back the atom we deleted
-        ldiv!(x.nzval, P.AiQR, P.b)
+        ldiv!!(x.nzval, P.AiQR, P.b, P.r)
         return false
     end
 end

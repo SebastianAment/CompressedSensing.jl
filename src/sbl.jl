@@ -8,7 +8,7 @@ struct SparseBayesianLearning{T, AT, BT, GT} <: Update{T}
     # B # pre-allocate
     # Σ::ST
     function SparseBayesianLearning(A::AbstractMatrix, b::AbstractVector,
-                        Σ::AbstractMatOrUni, Γ::Diagonal = (1.0I)(size(A, 2)))
+                        Σ::AbstractMatrix, Γ::Diagonal = (1.0I)(size(A, 2)))
         AΣ = A'inverse(Σ)
         AΣb = AΣ * b
         AΣA = AΣ * A
@@ -35,7 +35,7 @@ function update!(S::SBL, x::AbstractVector = zeros(size(S.Γ, 2)))
 end
 
 sbl(A, b, σ²::Real) = sbl(A, b, σ²*I(length(b)))
-function sbl(A::AbstractMatrix, b::AbstractVector, Σ::AbstractMatOrUni;
+function sbl(A::AbstractMatrix, b::AbstractVector, Σ::AbstractMatrix;
                         maxiter::Int = 128size(A, 2), min_change::Real = 1e-6)
     P = SBL(A, b, Σ)
     x = zeros(size(A, 2))

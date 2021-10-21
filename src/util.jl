@@ -22,7 +22,7 @@ function sparse_data(;n = 32, m = 64, k = 3, rescaled = true)
     A = randn(n, m)
     if rescaled
         ε = 1e-6
-        A .-= ε*mean(A, dims = 1)
+        A .-= ε*mean(A, dims = 1) # this apparently is good practice, better conditioning
         A ./= sqrt.(sum(abs2, A, dims = 1))
     end
 	x = sparse_vector(m, k)
@@ -160,6 +160,7 @@ function SparseArrays.droptol!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, tol:
     return droptol!(x, tol), AiQR
 end
 
+# TODO: this should be in util somewhere
 function Base.findmin(f, x::AbstractVector)
     k, m = 0, Inf
     for (i, xi) in enumerate(x)
@@ -178,7 +179,6 @@ function Base.findmax(f, x::AbstractVector)
 end
 Base.argmax(f, x::AbstractVector) = findmax(f, x)[2]
 
-# # TODO: this should be in util somewhere
 # using StatsBase: mean, std
 # # makes x mean zero along dimensions dims
 # function center!(x::AbstractVecOrMat, ε = 1e-6; dims = :)

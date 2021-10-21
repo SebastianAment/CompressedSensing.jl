@@ -2,7 +2,7 @@
 # equivalent to consecutive runs of forward and backward regression
 # δ is the largest marginal increase/decrease in residual norm before
 # rmp with outer iterations
-function rmp(A::AbstractMatrix, b::AbstractVector, δ::Real,
+function rmp(A::AbstractMatOrFac, b::AbstractVector, δ::Real,
                                     maxiter::Int = 1, x = spzeros(size(A, 2)))
     n = size(A, 1)
     xt = copy(x) # to keep track of changes in x
@@ -28,7 +28,7 @@ end
 # δ is the largest marginal increase/decrease in residual norm before
 # either forward or backward algorithm terminates
 # k is the desired sparsity of the solution
-function rmp(A::AbstractMatrix, b::AbstractVector,
+function rmp(A::AbstractMatOrFac, b::AbstractVector,
             k::Int, x = spzeros(size(A, 2)))
     n = size(A, 1)
     P = StepwiseRegression(A, b, x.nzind)
@@ -43,7 +43,7 @@ end
 
 # see Adaptive Forward-Backward Greedy Algorithm for Sparse Learning with Linear Models
 # terminates if algorithm can't decrease residual norm by more than δ
-function foba(A::AbstractMatrix, b::AbstractVector, δ::Real, x = spzeros(size(A, 2));
+function foba(A::AbstractMatOrFac, b::AbstractVector, δ::Real, x = spzeros(size(A, 2));
                                                             isfast::Val = Val(true))
     n = size(A, 1)
     P = StepwiseRegression(A, b, x.nzind)

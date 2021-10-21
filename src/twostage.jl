@@ -1,6 +1,6 @@
 ################### stepwise regression with replacement (SRR) #################
 # one-lookahead greedy two-step algorithm, based on stepwise regression algorithms
-function srr(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12,
+function srr(A::AbstractMatOrFac, b::AbstractVector, k::Int, δ::Real = 1e-12,
                                             x = spzeros(eltype(A), size(A, 2));
                                             maxiter = 4k, initialization::Int = 1,
                                             l::Int = 1)
@@ -39,7 +39,7 @@ end
 end
 
 ################################## Subspace Pursuit ############################
-struct SubspacePursuit{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T}} <: AbstractMatchingPursuit{T}
+struct SubspacePursuit{T, AT<:AbstractMatOrFac{T}, B<:AbstractVector{T}} <: AbstractMatchingPursuit{T}
     A::AT
     b::B
     k::Int # maximum number of non-zeros
@@ -51,7 +51,7 @@ struct SubspacePursuit{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T}} <: Abstra
 end
 const SP = SubspacePursuit
 
-function SP(A::AbstractMatrix, b::AbstractVector, k::Integer)
+function SP(A::AbstractMatOrFac, b::AbstractVector, k::Integer)
     2k > length(b) && error("2k = $(2k) > $(length(b)) = length(b) is invalid for Subspace Pursuit")
     n, m = size(A)
     T = eltype(A)
@@ -84,7 +84,7 @@ end
 
 # calculates k-sparse approximation to Ax = b via subspace pursuit
 # could also stop if indices are same between iterations
-function sp(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real = 1e-12; maxiter = 16k)
+function sp(A::AbstractMatOrFac, b::AbstractVector, k::Int, δ::Real = 1e-12; maxiter = 16k)
     P = SP(A, b, k)
     x = spzeros(size(A, 2))
     sp_acquisition!(P, x, P.k)
@@ -107,7 +107,7 @@ end
 end
 
 ############################# OMP with replacement #############################
-struct OMPR{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T}, FT} <: AbstractMatchingPursuit{T}
+struct OMPR{T, AT<:AbstractMatOrFac{T}, B<:AbstractVector{T}, FT} <: AbstractMatchingPursuit{T}
     A::AT
     b::B
     k::Int
@@ -121,14 +121,12 @@ struct OMPR{T, AT<:AbstractMatrix{T}, B<:AbstractVector{T}, FT} <: AbstractMatch
 end
 
 # similar to RMP, or OMP?
-function OMPR(A::AbstractMatrix, b::AbstractVector, k::Int)
+function OMPR(A::AbstractMatOrFac, b::AbstractVector, k::Int)
     n, m = size(A)
     T = eltype(A)
     r, Ar = zeros(T, n), zeros(T, m)
-    # AiQR = UpdatableQR(reshape(A[:, 1], :, 1))
-    AiQR = PUQR(reshape(A[:, 1], :, 1))
+    AiQR = UpdatableQR(T, n, n) # initializing empty qr factorization with maximum rank n
     QA = zeros(T, (n, m))
-    remove_column!(AiQR) # start with empty factorization
     OMPR(A, b, k, r, Ar, QA, AiQR)
 end
 
@@ -177,13 +175,13 @@ function update!(P::OMPR, x::AbstractVector, η::Real = 1.)
     end
 
     # least-squares solve for active atoms
-    ldiv!(x.nzval, P.AiQR, P.b)
+    ldiv!!(x.nzval, P.AiQR, P.b, P.r)
     return x
 end
 
 # k is desired sparsity level
 # l is cardinality of maximum replacement per iteration, l = k corresponds to sp
-function ompr(A::AbstractMatrix, b::AbstractVector, k::Int, δ::Real,
+function ompr(A::AbstractMatOrFac, b::AbstractVector, k::Int, δ::Real,
                                 x = spzeros(size(A, 2)); maxiter = size(A, 1))
     P = OMPR(A, b, k)
     if nnz(x) < P.k # make sure support set is of size k
