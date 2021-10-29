@@ -115,14 +115,23 @@ function cumbabel(A::AbstractMatrix, k::Integer)
 end
 
 ########################### SparseArrays conveniences ##########################
-function addindex!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, a::AbstractVector, i::Int)
-    x[i] = NaN   # add non-zero index to active set
-    # efficiently update qr factorization using Givens rotations
-    qr_i = findfirst(==(i), x.nzind) # index in qr where new atom should be added
-    add_column!(AiQR, a, qr_i)
+function addindex!(x::SparseVector, AiQR::UpdatableQR, a::AbstractVector, i::Int)
+	if i ∉ x.nzind # if the index is not already in the support set
+	    x[i] = NaN   # add non-zero index to active set
+	    # efficiently update qr factorization using Givens rotations
+	    qr_i = findfirst(==(i), x.nzind) # index in qr where new atom should be added
+	    add_column!(AiQR, a, qr_i)
+	end
     return x, AiQR
 end
 const addind! = addindex!
+
+function addindex!(x::SparseVector, AiQR::UpdatableQR, A::AbstractMatrix, indices::AbstractVector)
+    for (i, j) in enumerate(indices)
+		addindex!(x, AiQR, @view(A[:, i]), j)
+	end
+	return x, AiQR
+end
 
 # drops the ith index-value pair of x, if it is in nzind
 function dropindex!(x::SparseVector, i::Int)
@@ -136,7 +145,7 @@ end
 const dropind! = dropindex!
 dropind!(x::SparseVector, i::AbstractVector{<:Int}) = dropind!.((x,), i)
 # simultaneously deletes an index of x and removes a column of a UpdatableQR
-function dropindex!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, i::Int)
+function dropindex!(x::SparseVector, AiQR::UpdatableQR, i::Int)
     j = findfirst(==(i), x.nzind)
     if !isnothing(j)
 		_dropindex!(x, AiQR, j)
@@ -144,14 +153,14 @@ function dropindex!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, i::Int)
     return x, AiQR
 end
 # WARNING: drops index j into x,nzval, NOT into x, as dropindex!
-function _dropindex!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, j::Int)
+function _dropindex!(x::SparseVector, AiQR::UpdatableQR, j::Int)
 	deleteat!(x.nzind, j)
 	deleteat!(x.nzval, j)
 	remove_column!(AiQR, j)
 	return x, AiQR
 end
 
-function SparseArrays.droptol!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, tol::Real)
+function SparseArrays.droptol!(x::SparseVector, AiQR::UpdatableQR, tol::Real)
     for i in reverse(eachindex(x.nzind)) # reverse is necessary to not mess up indexing into QR factorization
         if abs(x.nzval[i]) ≤ tol
             remove_column!(P.AiQR, i)
@@ -160,7 +169,7 @@ function SparseArrays.droptol!(x::SparseVector, AiQR::Union{<:UQR, <:PUQR}, tol:
     return droptol!(x, tol), AiQR
 end
 
-# TODO: this should be in util somewhere
+# TODO: this should be in util somewhere, added in Julia 1.7?
 function Base.findmin(f, x::AbstractVector)
     k, m = 0, Inf
     for (i, xi) in enumerate(x)

@@ -4,13 +4,8 @@ using LinearAlgebra
 using SparseArrays
 using LinearAlgebraExtensions
 
-# TODO: change this to new updatable QR implementation
-# ADD "GeneralizedOMP"
-# using LinearAlgebraExtensions: UpdatableQR, UQR, PUQR, add_column!, remove_column!
 using UpdatableQRFactorizations
-const PUQR = UQR
 
-# using LinearAlgebraExtensions: Projection, AbstractMatOrUni, AbstractMatOrFac
 const AbstractMatOrFac{T} = Union{AbstractMatrix{T}, Factorization{T}}
 using LazyInverse: inverse
 using WoodburyIdentity

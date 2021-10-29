@@ -1,4 +1,4 @@
-module TestTwoStage
+module TestStepwise
 using Test
 using CompressedSensing: gaussian_data, perturb, rmp, foba
 

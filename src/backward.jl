@@ -131,7 +131,7 @@ function FBR(A::AbstractMatOrFac, b::AbstractVector, r::AbstractVector, F::Facto
     δ² = zeros(m)
     return FBR(A, b, r, AA, Ab, δ²)
 end
-function FBR(A::AbstractMatOrFac, b::AbstractVector, r::AbstractVector, F::PUQR)
+function FBR(A::AbstractMatOrFac, b::AbstractVector, r::AbstractVector, F::UpdatableQR)
     n, m = size(F)
     E = F.uqr
     AA = E.R1 \ Matrix(E.R1' \ I(m))

@@ -60,18 +60,18 @@ function SP(A::AbstractMatOrFac, b::AbstractVector, k::Integer)
     SP(A, b, k, r, Ar, Ai)
 end
 
-# returns indices of k atoms with largest inner products with residual
+# adds indices of k atoms with largest inner products with residual
+# solves least-squares problem on expanded support
 # could use threshold on P.Ar for adaptive stopping
 # this is oblivious algorithm applied to residual
-sp_index!(P::SP, k::Int = P.k) = argmaxinner!(P, k)
 function sp_acquisition!(P::SP, x, k::Int = P.k)
     residual!(P, x)
-    i = sp_index!(P, k)
+    i = argmaxinner!(P, k)
     @. x[i] = NaN
     solve!(P, x)
 end
-# TODO: could pre-allocate nz arrays to be of length 2K
-# TODO: could add efficient qr updating
+# IDEA: could pre-allocate nz arrays to be of length 2K
+# IDEA: could add efficient qr updating
 function update!(P::SP, x::AbstractVector = spzeros(size(P.A, 2)), ε::Real = 0.)
     nnz(x) == P.k || throw("nnz(x) = $(nnz(x)) ≠ $(P.k) = k")
     sp_acquisition!(P, x)
