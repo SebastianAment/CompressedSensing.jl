@@ -2,13 +2,12 @@ module CompressedSensing
 
 using LinearAlgebra
 using SparseArrays
-using LinearAlgebraExtensions
 
+using LazyInverses
+using WoodburyFactorizations
 using UpdatableQRFactorizations
 
 const AbstractMatOrFac{T} = Union{AbstractMatrix{T}, Factorization{T}}
-using LazyInverse: inverse
-using WoodburyIdentity
 
 using Base.Threads
 using StatsBase: sample, mean

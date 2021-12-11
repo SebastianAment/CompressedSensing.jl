@@ -25,7 +25,7 @@ const SBL = SparseBayesianLearning
 # for noiseless L0 norm minimization: B = get_sqrt(Γ)*pseudoinverse(A * get_sqrt(Γ))
 function update!(S::SBL, x::AbstractVector = zeros(size(S.Γ, 2)))
     AΣA, AΣb, Γ = S.AΣA, S.AΣb, S.Γ
-    B = AΣA + inverse(Γ) # woodury makes sense if number of basis functions is larger than x
+    B = AΣA + inv(Γ) # woodury makes sense if number of basis functions is larger than x
     B = factorize(B) # could use in-place cholesky!(B)
     B isa Number ? (x .= AΣb ./ B) : ldiv!(x, B, AΣb) # x = B \ AΣb, could generalize with functional solve! input
     # update rules
@@ -98,7 +98,7 @@ struct RMPS{T, AT<:AbstractMatrix{T}, BT, NT, A, CT} <: Update{T}
     S::A
     Q::A
     δ::A # holds difference in marginal likelihood for updating an atom
-    C⁻¹::CT # TODO: use Woodbury type here
+    C⁻¹::CT # IDEA: use Woodbury type here
 end
 function RMPS(A::AbstractMatrix, b::AbstractVector, σ²::Real, α::AbstractVector = fill(Inf, size(A, 2)))
     RMPS(A, b, σ²*I(length(b)), α)

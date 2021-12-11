@@ -30,7 +30,7 @@ using SparseArrays
     end
 
     @testset "Generalized Orthogonal Matching Pursuit" begin
-        n, m, k = 64, 128, 7
+        n, m, k = 64, 96, 7
         A, x, b = sparse_data(n = n, m = m, k = k)
         y = perturb(b, δ/2)
         l = 3 # identify three atoms at a time

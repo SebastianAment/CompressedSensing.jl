@@ -91,7 +91,7 @@ function omp(A::AbstractMatOrFac, b::AbstractVector;
 end
 
 ################## Generalized Orthogonal Matching Pursuit ######################
-# could extend: preconditioning, non-negativity constraint
+# see https://arxiv.org/pdf/1111.6664.pdf
 struct GeneralizedOrthogonalMatchingPursuit{T, AT<:AbstractMatOrFac{T}, B<:AbstractVector{T},
                             V<:AbstractVector{T}, FT} <: AbstractMatchingPursuit{T}
     A::AT
@@ -116,7 +116,7 @@ end
 function update!(P::GOMP, x::AbstractVector = spzeros(size(P.A, 2)), l = P.l)
     nnz(x) < size(P.A, 1) || return x
     residual!(P, x)
-    i = argmaxinner!(P, l) # returns indices of l largest inner products 
+    i = argmaxinner!(P, l) # returns indices of l largest inner products
     addindex!(x, P, i)
     ldiv!!(x.nzval, P.AiQR, P.b, P.r)
     return x

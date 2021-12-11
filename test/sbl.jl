@@ -46,14 +46,14 @@ y = perturb(b, σ/2)
 
 end
 
-bench = false
-using BenchmarkTools
-if bench
-    @btime sbl($A, $b, $(σ^2))
-    @btime rmps($A, $b, $(σ^2))
-    @btime fsbl($A, $b, $(σ^2))
-    @btime rmp($A, $y, $(σ^2))
-    @btime foba($A, $y, $(σ^2))
+# bench = false
+# using BenchmarkTools
+# if bench
+#     @btime sbl($A, $b, $(σ^2))
+#     @btime rmps($A, $b, $(σ^2))
+#     @btime fsbl($A, $b, $(σ^2))
+#     @btime rmp($A, $y, $(σ^2))
+#     @btime foba($A, $y, $(σ^2))
+# end
 
-end
 end # TestSBL
