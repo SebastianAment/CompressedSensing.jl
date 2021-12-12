@@ -1,5 +1,6 @@
 # CompressedSensing.jl
 [![CI](https://github.com/SebastianAment/CompressedSensing.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/SebastianAment/CompressedSensing.jl/actions/workflows/CI.yml)
+[![codecov](https://codecov.io/gh/SebastianAment/CompressedSensing.jl/branch/main/graph/badge.svg?token=NPYC21MIQT)](https://codecov.io/gh/SebastianAment/CompressedSensing.jl)
 
 Contains a wide-ranging collection of compressed sensing and feature selection algorithms.
 Examples include matching pursuit algorithms, forward and backward stepwise regression, sparse Bayesian learning, and basis pursuit.
