@@ -4,7 +4,7 @@ using CompressedSensing: sparse_data, fr, foba, perturb, FR
 
 using Test
 using LinearAlgebra
-n, m, k = 32, 64, 3
+n, m, k = 32, 48, 3
 A, x, b = sparse_data(n = n, m = m, k = k) # needs to be determined
 δ = 1e-2
 y = perturb(b, δ)

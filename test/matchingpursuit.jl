@@ -7,7 +7,7 @@ using SparseArrays
 # NOTE: these tests may rarely fail, because the randomly generated data is "hard"
 # a small failure probability is theoretically expected
 @testset "Matching Pursuits" begin
-    n, m, k = 32, 64, 3
+    n, m, k = 32, 48, 3
     A, x, b = sparse_data(n = n, m = m, k = k)
     δ = 1e-2 # slightly noisy
     y = perturb(b, δ/2)
@@ -30,10 +30,10 @@ using SparseArrays
     end
 
     @testset "Generalized Orthogonal Matching Pursuit" begin
-        n, m, k = 64, 96, 7
+        n, m, k = 32, 48, 3
         A, x, b = sparse_data(n = n, m = m, k = k)
         y = perturb(b, δ/2)
-        l = 3 # identify three atoms at a time
+        l = 2 # identify two atoms at a time
         # noiseless
         xgomp = gomp(A, b, l, k)
         @test xgomp.nzind == x.nzind

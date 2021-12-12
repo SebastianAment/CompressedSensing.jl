@@ -7,7 +7,7 @@ using LinearAlgebra
 using SparseArrays
 
 # set up data
-n, k = 64, 16
+n, k = 32, 3
 A, x, b = gaussian_data(n = n, m = n, k = k)
 δ = 1e-2
 y = perturb(b, δ/2)

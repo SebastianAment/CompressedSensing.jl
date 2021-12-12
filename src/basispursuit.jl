@@ -144,9 +144,10 @@ shrinkage(x::Real, α::Real) = sign(x) * max(abs(x)-α, zero(x))
 
 # TODO fast iterative shrinkage and hard-thresholding algorithm
 # for weighted l1-norm minimization
-function fista(A::AbstractMatrix, b::AbstractVector, λ::Real, x::AbstractVector = spzeros(size(A, 2)))
+function fista(A::AbstractMatrix, b::AbstractVector, λ::Real,
+    x::AbstractVector = spzeros(size(A, 2)); maxiter::Int = 1024, stepsize::Real = 1e-2)
     w = fill(λ, size(x))
-    fista(A, b, w, x)
+    fista(A, b, w, x, maxiter = maxiter, stepsize = stepsize)
 end
 
 function l1(x::AbstractVector, w::AbstractVector)
@@ -159,20 +160,20 @@ function l1(x::AbstractVector, w::AbstractVector)
 end
 
 # TODO: stepsize selection
-function ista(A, b, λ::Real, x = spzeros(size(A, 2)); maxiter::Int = 128)
-    ista(A, b, fill(λ, size(x)), x, maxiter = maxiter)
+function ista(A, b, λ::Real, x = spzeros(size(A, 2)); maxiter::Int = 1024, stepsize::Real = 1e-2)
+    ista(A, b, fill(λ, size(x)), x, maxiter = maxiter, stepsize = stepsize)
 end
 
 function ista(A::AbstractMatrix, b::AbstractVector, w::AbstractVector,
                                         x::AbstractVector = spzeros(size(A, 2));
-                                        maxiter::Int = 128)
+                                        maxiter::Int = 1024, stepsize::Real = 1e-2)
     x = sparse(x)
     r(x) = b-A*x # residual
     f(x) = sum(abs2, r(x)) + l1(x, w)
     g(x) = A'r(x) # negative gradient
-    α = .01 # step-size
+    α = stepsize
     fx = f(x)
-    for i in 1:1024
+    for i in 1:maxiter
         ∇ = g(x)
         @. x = shrinkage(x + 2α*∇, w*α)
         dropzeros!(x) # optimize sparse representation
@@ -183,14 +184,14 @@ end
 
 function fista(A::AbstractMatrix, b::AbstractVector, w::AbstractVector,
                                         x::AbstractVector = spzeros(size(A, 2));
-                                        maxiter::Int = 128)
+                                        maxiter::Int = 1024, stepsize::Real = 1e-2)
     x = sparse(x)
     r(x) = b-A*x # residual
     f(x) = sum(abs2, r(x)) + l1(x, w)
     g(x) = A'r(x) # negative gradient
-    α = .1 # step-size
+    α = stepsize
     tk = 1
-    for i in 1:16
+    for i in 1:maxiter
         ∇ = g(x)
         tkn = (1 + sqrt(1 + 4tk^2)) / 2
         y = xkn + (tk - 1) / tkn * (xkn - xk)

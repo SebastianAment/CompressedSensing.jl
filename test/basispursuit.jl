@@ -4,7 +4,7 @@ using LinearAlgebra
 using SparseArrays
 using CompressedSensing: bp, bp_candes, bp_ard, bpd, bpd_candes, bpd_ard, sparse_data, perturb
 
-n, m = 32, 64
+n, m = 32, 48
 k = 3
 A, x, b = sparse_data(n = n, m = m, k = k, rescaled = true)
 δ = 1e-2
@@ -39,7 +39,7 @@ end
 using CompressedSensing: ista, fista
 @testset "ISTA" begin
     λ = δ/10
-    xista = ista(A, y, λ, maxiter = 1024)
+    xista = ista(A, y, λ, maxiter = 1024, stepsize = 1e-1)
     # droptol!(xista, δ)
     # @test xista.nzind == x.nzind
     # @test xista.nzind ⊆ x.nzind

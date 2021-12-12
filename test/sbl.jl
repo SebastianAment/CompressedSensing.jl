@@ -4,7 +4,7 @@ using LinearAlgebra
 using CompressedSensing: sparse_data, sbl, SBL, fsbl, rmps, update!, rmp, foba, perturb
 using SparseArrays
 
-n, m, k = 64, 128, 6
+n, m, k = 32, 48, 3
 A, x, b = sparse_data(n = n, m = m, k = k)
 σ = 1e-2
 y = perturb(b, σ/2)
