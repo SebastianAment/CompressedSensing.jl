@@ -5,16 +5,29 @@
 Contains a wide-ranging collection of compressed sensing and feature selection algorithms.
 Examples include matching pursuit algorithms, forward and backward stepwise regression, sparse Bayesian learning, and basis pursuit.
 
-## Matching Pursuit
+## Matching Pursuits
 
-The package contains implementations of Matching Pursuit (MP), Orthogonal Matching Pursuit (OMP), and [Generalized OMP](https://arxiv.org/pdf/1111.6664.pdf) (GOMP),
+The package contains implementations of [Matching Pursuit (MP)](https://en.wikipedia.org/wiki/Matching_pursuit),
+[Orthogonal Matching Pursuit (OMP)](https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=342465),
+and [Generalized OMP (GOMP)](https://arxiv.org/pdf/1111.6664.pdf),
 all three of which take advantage of the efficient updating algorithms contained in [UpdatableQRFactorizations.jl](https://github.com/SebastianAment/UpdatableQRFactorizations.jl) to compute the QR factorization of the atoms in the active set.
 
 ## Stepwise Regression
-
+- Forward Regression
+- Backward Regression
+- 
 ## Two-Stage Algorithms
 
+- [Subspace Pursuit (SP)](https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=4839056&casa_token=fyP4fT6vvjAAAAAA:cT_80KeMMH3WycQA0f-HqXUj0hViY-fSajRgENqYmyOhOHWXTq5EIRE5rcpZl675JyHO917Trw).
+- Relevance Matching Pursuit (RMP) introduced in [Sparse Bayesian Learning via Stepwise Regression](https://proceedings.mlr.press/v139/ament21a.html).
+- Stepwise Regression with Replacement (SRR) introduced in [On the Optimality of Backward Regression: Sparse Recovery and Subset Selection](https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=9415082&casa_token=gmwN6_yXZSAAAAAA:uzKJOGwZFFwZzum2SoZWNtsvcpSQ34Rdib_0PlyU3oNDY-ZkB9PULGNGGnuHjSC2U51YiywiSQ).
+
+
 ## Sparse Bayesian Learning
+
+- Original SBL algorithm introduced in [Sparse Bayesian Learning and the Relevance Vector Machine](https://www.jmlr.org/papers/volume1/tipping01a/tipping01a.pdf).
+- [Fast Marginal Likelihood Maximisation for
+Sparse Bayesian Models](http://www.miketipping.com/papers/met-fastsbl.pdf)
 
 ## Basis Pursuit
 
