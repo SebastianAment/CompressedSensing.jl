@@ -1,7 +1,7 @@
 name = "CompressedSensing"
 uuid = "adc28fdd-7b77-41a2-89a7-a1a193b336a0"
 authors = ["Sebastian Ament <sebastianeament@gmail.com>"]
-version = "1.0.0"
+version = "1.0.1"
 
 [deps]
 Clp = "e2554f3b-3117-50c0-817c-e040a3ddf72d"
@@ -16,9 +16,9 @@ UpdatableQRFactorizations = "8b110c62-ada2-4dd7-b53a-29f29fe8f7f4"
 WoodburyFactorizations = "9f1bac23-581c-4ebc-bd36-df60d764636d"
 
 [compat]
-Clp = "0.9"
+Clp = "0.9, 1"
 ECOS = "0.14, 1"
-JuMP = "0.22"
+JuMP = "0.22, 0.23"
 LazyInverses = "1.1"
 StatsBase = "0.33"
 UpdatableQRFactorizations = "1.0"

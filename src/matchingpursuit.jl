@@ -86,7 +86,7 @@ function omp(A::AbstractMatOrFac, b::AbstractVector, k::Int)
 end
 
 function omp(A::AbstractMatOrFac, b::AbstractVector;
-    max_residual = eps(eltype(A)), sparsity = size(A, 2))
+    max_residual = eps(eltype(A)), sparsity = min(size(A)...))
     omp(A, b, max_residual, sparsity)
 end
 

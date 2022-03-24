@@ -45,12 +45,12 @@ end
 const bp_candes = candes_reweighting
 
 # using LinearAlgebraExtensions: LowRank
-# TODO: stop when w has converged, instead of maxiter
+# IDEA: stop when w has converged, instead of maxiter
 function ard_weights!(w, A, x, ε::Real, iter::Int = 8)
     if any(==(0), w)
         error("weights cannot be zero")
     end
-    # nzind = x.nzind # this could speed up the weight computation
+    # nzind = x.nzind # this could speed up the weight computation, could also drop zeros from model before reweighting ...
     # Ai = @view A[:, nzind]
     # wx = @. abs(x.nzval) / w[nzind]
     # K = Woodbury(ε*I(size(A, 1)), Ai, WX, Ai')
@@ -66,6 +66,7 @@ end
 
 ard_function(A::AbstractMatrix, ε::Real) = (w, x) -> ard_weights!(w, A, x, ε)
 
+# IDEA: generalize for general objectives via Jacobian (linearization)
 function ard_reweighting(A::AbstractMatrix, b::AbstractVector, ε::Real = 1e-2;
                                                             maxiter::Int = 8)
     basispursuit_reweighting(A, b, ard_function(A, ε), maxiter = maxiter)
@@ -137,7 +138,7 @@ end
 
 ################################ (F)ISTA ########################################
 struct FISTA end
-# TODO: use homotopy to select appropriate λ
+# IDEA: use homotopy to select appropriate λ
 
 # shrinkage and thresholding operator
 shrinkage(x::Real, α::Real) = sign(x) * max(abs(x)-α, zero(x))
