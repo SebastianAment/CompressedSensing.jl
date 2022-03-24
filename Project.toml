@@ -16,7 +16,7 @@ UpdatableQRFactorizations = "8b110c62-ada2-4dd7-b53a-29f29fe8f7f4"
 WoodburyFactorizations = "9f1bac23-581c-4ebc-bd36-df60d764636d"
 
 [compat]
-Clp = "0.9"
+Clp = "0.9, 1"
 ECOS = "0.14"
 JuMP = "0.22"
 LazyInverses = "1.1"
