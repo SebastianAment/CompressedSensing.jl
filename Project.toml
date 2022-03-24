@@ -1,7 +1,7 @@
 name = "CompressedSensing"
 uuid = "adc28fdd-7b77-41a2-89a7-a1a193b336a0"
 authors = ["Sebastian Ament <sebastianeament@gmail.com>"]
-version = "1.0.0"
+version = "1.0.1"
 
 [deps]
 Clp = "e2554f3b-3117-50c0-817c-e040a3ddf72d"
