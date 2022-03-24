@@ -17,7 +17,7 @@ WoodburyFactorizations = "9f1bac23-581c-4ebc-bd36-df60d764636d"
 
 [compat]
 Clp = "0.9, 1"
-ECOS = "0.14"
+ECOS = "0.14, 1"
 JuMP = "0.22, 0.23"
 LazyInverses = "1.1"
 StatsBase = "0.33"
